@@ -42,10 +42,24 @@ function AssetRow({
           <Text style={[styles.assetMake, { color: colors.foreground, flex: 1 }]} numberOfLines={1}>
             {asset.make} {asset.model}
           </Text>
+          {asset.syncStatus === "synced" && (
+            <MaterialIcons name="check-circle" size={14} color={colors.success} />
+          )}
+          {asset.syncStatus === "failed" && (
+            <MaterialIcons name="error" size={14} color={colors.error} />
+          )}
         </View>
         <Text style={[styles.assetSerial, { color: colors.muted }]}>
           S/N: {asset.serialNumber}
         </Text>
+        {asset.razorUid ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+            <MaterialIcons name="verified" size={12} color={colors.primary} />
+            <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" }}>
+              {asset.razorUid}
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.assetMeta}>
           <View
             style={[

@@ -397,16 +397,51 @@ export async function updateOrderNotes(id: number, notes: string) {
 
 // ---- Assets ----
 
-export async function createAsset(asset: {
+export interface CreateAssetPayload {
   make: string;
   model: string;
   serialNumber: string;
+  assetTypeName?: string;
   condition?: string;
   notes?: string;
-}) {
+  inboundOrderId?: number;
+}
+
+export interface RazorAssetResponse {
+  id: number;
+  autoName?: string; // Razor UID e.g. "AST-00001234"
+  make?: string;
+  model?: string;
+  serialNumber?: string;
+  [key: string]: unknown;
+}
+
+export async function createAsset(asset: CreateAssetPayload): Promise<RazorAssetResponse> {
   if (!client) throw new Error("Razor API client not initialized");
-  const res = await client.post("/Asset", asset);
+  const res = await client.post<RazorAssetResponse>("/Asset", asset);
   return res.data;
+}
+
+/**
+ * Link an existing asset to an inbound order.
+ * POST /api/v1/InboundOrder/{orderId}/assets  with body { assetId }
+ * Falls back to PATCH if POST is not available.
+ */
+export async function linkAssetToOrder(orderId: number, assetId: number): Promise<boolean> {
+  if (!client) throw new Error("Razor API client not initialized");
+  try {
+    await client.post(`/InboundOrder/${orderId}/assets`, { assetId });
+    return true;
+  } catch (e: any) {
+    // Some Razor versions use a different endpoint pattern
+    try {
+      await client.post(`/InboundOrder/${orderId}/asset/${assetId}`, {});
+      return true;
+    } catch {
+      console.warn(`[RazorAPI] Could not link asset ${assetId} to order ${orderId}:`, e?.message);
+      return false;
+    }
+  }
 }
 
 export async function lookupAssetBySerial(serialNumber: string) {

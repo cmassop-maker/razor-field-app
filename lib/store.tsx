@@ -63,6 +63,7 @@ type Action =
   | { type: "SET_ORDERS"; payload: LocalOrder[] }
   | { type: "UPDATE_ORDER"; payload: LocalOrder }
   | { type: "ADD_ASSET"; payload: { orderId: number; asset: CapturedAsset } }
+  | { type: "UPDATE_ASSET"; payload: { orderId: number; localId: string; updates: Partial<CapturedAsset> } }
   | { type: "REMOVE_ASSET"; payload: { orderId: number; localId: string } }
   | { type: "SET_SIGNATURE"; payload: { orderId: number; signature: CapturedSignature } }
   | { type: "SET_ORDER_STATUS"; payload: { orderId: number; status: OrderStatus } }
@@ -95,6 +96,24 @@ function reducer(state: AppState, action: Action): AppState {
         orders: state.orders.map((o) => {
           if (o.razorOrder.id === action.payload.orderId) {
             return { ...o, assets: [...o.assets, action.payload.asset] };
+          }
+          return o;
+        }),
+      };
+    }
+    case "UPDATE_ASSET": {
+      return {
+        ...state,
+        orders: state.orders.map((o) => {
+          if (o.razorOrder.id === action.payload.orderId) {
+            return {
+              ...o,
+              assets: o.assets.map((a) =>
+                a.localId === action.payload.localId
+                  ? { ...a, ...action.payload.updates }
+                  : a
+              ),
+            };
           }
           return o;
         }),

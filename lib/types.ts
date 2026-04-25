@@ -143,6 +143,7 @@ export interface RazorAddress {
 export interface CapturedAsset {
   localId: string; // UUID generated locally
   razorAssetId?: number; // Set after synced to Razor ERP
+  razorUid?: string; // Razor auto-generated UID e.g. "AST-00001234"
   orderId: number; // Links to the inbound order
   assetType: AssetType; // Category of the asset
   make: string;

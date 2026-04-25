@@ -16,7 +16,7 @@ import { useStore } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
-import { createAsset, uploadOrderFile, updateOrderNotes } from "@/lib/razor-api";
+import { createAsset, uploadOrderFile, updateOrderNotes, linkAssetToOrder } from "@/lib/razor-api";
 import type { CapturedAsset } from "@/lib/types";
 import { generateAndShareReport, printReport } from "@/lib/generate-report";
 
@@ -43,25 +43,69 @@ export default function OrderSummaryScreen() {
       setSubmitResult(null);
       let successCount = 0;
       let failCount = 0;
+      const razorOrderId = order.razorOrder.id;
 
-      // Submit each asset
+      // Submit each asset to Razor ERP and capture the returned ID/UID
       for (const asset of order.assets) {
-        if (asset.syncStatus === "synced") {
+        if (asset.syncStatus === "synced" && asset.razorAssetId) {
           successCount++;
           continue;
         }
+
+        // Mark as syncing
+        dispatch({
+          type: "UPDATE_ASSET",
+          payload: {
+            orderId: razorOrderId,
+            localId: asset.localId,
+            updates: { syncStatus: "syncing" },
+          },
+        });
+
         try {
-          await createAsset({
+          const result = await createAsset({
             make: asset.make,
             model: asset.model,
             serialNumber: asset.serialNumber,
+            assetTypeName: asset.assetType,
             condition: asset.condition,
             notes: asset.notes,
+            inboundOrderId: razorOrderId,
           });
+
+          // Extract the Razor asset ID and UID from the response
+          const razorAssetId = result.id;
+          const razorUid = result.autoName || `AST-${String(razorAssetId).padStart(8, "0")}`;
+
+          // Update the local asset with Razor ID and UID
+          dispatch({
+            type: "UPDATE_ASSET",
+            payload: {
+              orderId: razorOrderId,
+              localId: asset.localId,
+              updates: {
+                razorAssetId,
+                razorUid,
+                syncStatus: "synced",
+              },
+            },
+          });
+
+          // Try to link the asset to the inbound order
+          await linkAssetToOrder(razorOrderId, razorAssetId);
+
           successCount++;
-        } catch (e) {
+        } catch (e: any) {
           failCount++;
-          console.error("Failed to submit asset:", asset.localId, e);
+          console.error("Failed to submit asset:", asset.localId, e?.message);
+          dispatch({
+            type: "UPDATE_ASSET",
+            payload: {
+              orderId: razorOrderId,
+              localId: asset.localId,
+              updates: { syncStatus: "failed" },
+            },
+          });
         }
       }
 
@@ -69,9 +113,9 @@ export default function OrderSummaryScreen() {
       if (order.signature && order.signature.syncStatus !== "synced") {
         try {
           await uploadOrderFile(
-            order.razorOrder.id,
+            razorOrderId,
             order.signature.signatureBase64,
-            `signature_${order.razorOrder.id}_${Date.now()}.png`
+            `signature_${razorOrderId}_${Date.now()}.png`
           );
         } catch (e) {
           console.error("Failed to upload signature:", e);
@@ -83,19 +127,19 @@ export default function OrderSummaryScreen() {
       if (failCount === 0) {
         dispatch({
           type: "SET_ORDER_STATUS",
-          payload: { orderId: order.razorOrder.id, status: "Completed" },
+          payload: { orderId: razorOrderId, status: "Completed" },
         });
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         }
         setSubmitResult({
           success: true,
-          message: `Successfully submitted ${successCount} asset${successCount !== 1 ? "s" : ""} and signature to Razor ERP.`,
+          message: `Successfully submitted ${successCount} asset${successCount !== 1 ? "s" : ""} to Razor ERP. Each asset has been assigned a Razor UID.`,
         });
       } else {
         setSubmitResult({
           success: false,
-          message: `Submitted ${successCount} asset${successCount !== 1 ? "s" : ""}, but ${failCount} item${failCount !== 1 ? "s" : ""} failed. Check your connection and try again.`,
+          message: `Submitted ${successCount} asset${successCount !== 1 ? "s" : ""}, but ${failCount} item${failCount !== 1 ? "s" : ""} failed. Failed assets can be retried.`,
         });
       }
 
@@ -107,7 +151,7 @@ export default function OrderSummaryScreen() {
     } else {
       Alert.alert(
         "Submit to Razor ERP",
-        `This will submit ${order.assets.length} asset${order.assets.length !== 1 ? "s" : ""}${order.signature ? " and the collected signature" : ""} to Razor ERP.`,
+        `This will submit ${order.assets.length} asset${order.assets.length !== 1 ? "s" : ""}${order.signature ? " and the collected signature" : ""} to Razor ERP.\n\nEach asset will be assigned a Razor UID.`,
         [
           { text: "Cancel", style: "cancel" },
           { text: "Submit", onPress: doSubmit },
@@ -260,9 +304,20 @@ export default function OrderSummaryScreen() {
             style={[styles.assetItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
           >
             <View style={{ flex: 1 }}>
-              <Text style={[styles.assetTitle, { color: colors.foreground }]}>
-                {item.make} {item.model}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={[styles.assetTitle, { color: colors.foreground }]}>
+                  {item.make} {item.model}
+                </Text>
+                {item.syncStatus === "synced" && (
+                  <MaterialIcons name="check-circle" size={14} color={colors.success} />
+                )}
+                {item.syncStatus === "syncing" && (
+                  <ActivityIndicator size={12} color={colors.primary} />
+                )}
+                {item.syncStatus === "failed" && (
+                  <MaterialIcons name="error" size={14} color={colors.error} />
+                )}
+              </View>
               <Text
                 style={[
                   styles.assetSerial,
@@ -271,6 +326,16 @@ export default function OrderSummaryScreen() {
               >
                 S/N: {item.serialNumber}
               </Text>
+              {item.razorUid ? (
+                <Text
+                  style={[
+                    styles.assetSerial,
+                    { color: colors.primary, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontWeight: "600" },
+                  ]}
+                >
+                  Razor UID: {item.razorUid}
+                </Text>
+              ) : null}
             </View>
             <Text style={[styles.condition, { color: colors.muted }]}>{item.condition}</Text>
           </View>

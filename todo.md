@@ -61,3 +61,6 @@
 - [ ] Block duplicate serial numbers entirely (no Keep option, clear serial and show error)
 - [ ] Auto-reopen camera scanner after saving an asset
 - [x] Bug fix: Back button on asset capture goes to scanner instead of order page
+- [x] Assign Razor UID to each scanned asset via Razor ERP API
+- [x] Sync captured assets back to the Razor order via API
+- [x] Show sync status and Razor UID on captured assets in UI
