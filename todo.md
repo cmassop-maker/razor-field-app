@@ -1,0 +1,22 @@
+# Project TODO
+
+- [x] Update theme colors (green recycling brand)
+- [x] Add icon mappings for all tabs and UI elements
+- [x] Create Login screen with API credentials
+- [x] Create Orders list screen (Home tab)
+- [x] Create Order Detail screen
+- [x] Create Asset Capture form screen
+- [x] Create Camera Scanner screen (barcode + OCR)
+- [x] Create Signature capture screen
+- [x] Create Order Summary / review screen
+- [x] Create Settings tab screen
+- [x] Build Razor ERP API service layer
+- [x] Implement local state management (orders, assets, signatures)
+- [x] Implement offline queue with AsyncStorage
+- [x] Implement pull-to-refresh on orders
+- [x] Implement search/filter on orders
+- [x] Add haptic feedback on primary actions
+- [x] Generate custom app icon
+- [x] Update app.config.ts with branding
+- [x] Write tests for core functionality
+- [x] Final polish and checkpoint
