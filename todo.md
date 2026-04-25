@@ -58,3 +58,5 @@
 - [x] Reorder asset capture form: Make and Model before Serial Number/Scan (3-step card layout)
 - [x] Reorder asset capture: Serial Number/Scan as Step 1, Device Info as Step 2
 - [x] Add duplicate serial number detection with alert prompt
+- [ ] Block duplicate serial numbers entirely (no Keep option, clear serial and show error)
+- [ ] Auto-reopen camera scanner after saving an asset

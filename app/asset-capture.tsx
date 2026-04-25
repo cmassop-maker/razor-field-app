@@ -142,28 +142,21 @@ export default function AssetCaptureScreen() {
     if (existing) {
       const isSameOrder = existing.orderId === Number(orderId);
       const msg = isSameOrder
-        ? `This serial number has already been captured on this order.`
-        : `This serial number was already captured on Order #${existing.orderNum}.`;
+        ? `Serial "${serial.trim()}" has already been captured on this order.`
+        : `Serial "${serial.trim()}" was already captured on Order #${existing.orderNum}.`;
       setDuplicateWarning(msg);
 
-      // Show alert
+      // Show alert and block — no option to keep
       Alert.alert(
         "Duplicate Serial Number",
-        `"${serial.trim()}" has already been captured${isSameOrder ? " on this order" : ` on Order #${existing.orderNum}`}.\n\nDo you want to continue anyway?`,
+        `"${serial.trim()}" has already been captured${isSameOrder ? " on this order" : ` on Order #${existing.orderNum}`}.\n\nDuplicate serial numbers are not allowed.`,
         [
           {
-            text: "Clear",
-            style: "destructive",
+            text: "OK",
+            style: "default",
             onPress: () => {
               setSerialNumber("");
               setDuplicateWarning("");
-            },
-          },
-          {
-            text: "Keep",
-            style: "default",
-            onPress: () => {
-              // Keep the serial, warning stays visible
             },
           },
         ]
@@ -282,6 +275,18 @@ export default function AssetCaptureScreen() {
       setError("Serial number is required");
       return;
     }
+    // Block duplicate serial at save time as well
+    const dupKey = serialNumber.trim().toUpperCase();
+    const dupExisting = allCapturedSerials.current.get(dupKey);
+    if (dupExisting) {
+      const isSame = dupExisting.orderId === Number(orderId);
+      Alert.alert(
+        "Duplicate Serial Number",
+        `"${serialNumber.trim()}" has already been captured${isSame ? " on this order" : ` on Order #${dupExisting.orderNum}`}.\n\nDuplicate serial numbers are not allowed.`,
+        [{ text: "OK", onPress: () => { setSerialNumber(""); setDuplicateWarning(""); } }]
+      );
+      return;
+    }
     if (!make.trim()) {
       setError("Make is required");
       return;
@@ -320,21 +325,29 @@ export default function AssetCaptureScreen() {
     setSavedCount((prev) => prev + 1);
     setDuplicateWarning("");
 
-    if (continuousScan) {
-      // Keep make, model, assetType, condition for quick re-entry
-      setNotes("");
-      if (serialQueue.length > 0 && queueIndex + 1 < serialQueue.length) {
-        const nextIdx = queueIndex + 1;
-        setQueueIndex(nextIdx);
-        setSerialNumber(serialQueue[nextIdx]);
-        // Check next serial for duplicates
-        checkDuplicateSerial(serialQueue[nextIdx]);
-      } else {
-        setSerialNumber("");
-        setTimeout(() => serialInputRef.current?.focus(), 100);
-      }
+    // After save, clear serial and notes, then auto-reopen scanner
+    setNotes("");
+    setSerialNumber("");
+
+    if (serialQueue.length > 0 && queueIndex + 1 < serialQueue.length) {
+      // Process next serial from batch queue
+      const nextIdx = queueIndex + 1;
+      setQueueIndex(nextIdx);
+      setSerialNumber(serialQueue[nextIdx]);
+      checkDuplicateSerial(serialQueue[nextIdx]);
     } else {
-      router.back();
+      // Auto-reopen camera scanner for next asset
+      setSerialQueue([]);
+      setQueueIndex(0);
+      setTimeout(() => {
+        router.push({
+          pathname: "/scanner",
+          params: {
+            orderId,
+            continuous: "false",
+          },
+        });
+      }, 300);
     }
   }, [
     make,
@@ -563,7 +576,7 @@ export default function AssetCaptureScreen() {
               style={{
                 backgroundColor: colors.background,
                 borderColor: duplicateWarning
-                  ? colors.warning
+                  ? colors.error
                   : serialNumber
                     ? colors.success
                     : colors.border,
@@ -585,21 +598,21 @@ export default function AssetCaptureScreen() {
               returnKeyType="done"
             />
 
-            {/* Serial confirmation or duplicate warning */}
+            {/* Serial confirmation or duplicate error */}
             {duplicateWarning ? (
               <View
                 className="flex-row items-start mt-2 p-2.5 rounded-lg"
-                style={{ backgroundColor: colors.warning + "20" }}
+                style={{ backgroundColor: colors.error + "20" }}
               >
                 <MaterialIcons
-                  name="warning"
+                  name="block"
                   size={18}
-                  color={colors.warning}
+                  color={colors.error}
                   style={{ marginTop: 1 }}
                 />
                 <Text
-                  className="text-sm ml-2 flex-1"
-                  style={{ color: colors.warning }}
+                  className="text-sm ml-2 flex-1 font-medium"
+                  style={{ color: colors.error }}
                 >
                   {duplicateWarning}
                 </Text>
@@ -969,12 +982,12 @@ export default function AssetCaptureScreen() {
             <View className="flex-row items-center gap-2">
               <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
               <Text className="text-white font-semibold text-base">
-                {continuousScan ? "Save & Next" : "Save Asset"}
+                Save & Scan Next
               </Text>
             </View>
           </TouchableOpacity>
 
-          {continuousScan && savedCount > 0 && (
+          {savedCount > 0 && (
             <TouchableOpacity
               className="rounded-xl py-3 items-center mt-3 border"
               style={{ borderColor: colors.border }}
