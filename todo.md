@@ -90,3 +90,6 @@
 - [x] Shorten asset UID — replaced full UUID (36 chars) with short format: "RF" prefix + 8 uppercase hex chars = 10 chars total (e.g. "RF4A7B2C1E"). Razor ERP keeps whatever uniqueId we send, so app and Razor now show the same short UID.
 - [x] Continuous/batch scan mode — new Batch Scan screen where user sets make, model, asset type, and condition once, then scans multiple serial numbers consecutively. Each scan auto-creates an asset. Includes duplicate detection, running count, remove individual items, and "Scan More" to re-open camera. Accessible from order detail via new "Batch Scan" button.
 - [x] Bug fix: Batch scan feature not working — root cause was state loss during navigation to/from scanner. Fixed by persisting batch state (make, model, asset type, condition, saved assets) to AsyncStorage before navigating to scanner, and restoring on return. Scanner properly returns scanned serials via params, batch-scan processes them and creates assets with the pre-set device info.
+- [x] Continuous capture mode should keep same make, model, asset type, and condition — only clear serial number and notes after saving
+- [ ] Add Razor BOL (Bill of Lading) document viewing/downloading to the app
+- [ ] Add Razor Work Order document viewing/downloading to the app

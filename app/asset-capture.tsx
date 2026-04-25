@@ -325,18 +325,39 @@ export default function AssetCaptureScreen() {
     setSavedCount((prev) => prev + 1);
     setDuplicateWarning("");
 
-    // After save, clear serial and notes, then auto-reopen scanner
-    setNotes("");
+    // After save: always clear serial number
     setSerialNumber("");
 
-    if (serialQueue.length > 0 && queueIndex + 1 < serialQueue.length) {
-      // Process next serial from batch queue
-      const nextIdx = queueIndex + 1;
-      setQueueIndex(nextIdx);
-      setSerialNumber(serialQueue[nextIdx]);
-      checkDuplicateSerial(serialQueue[nextIdx]);
+    if (continuousScan) {
+      // Continuous mode: keep make, model, asset type, condition
+      // Only clear notes and serial, then auto-reopen scanner for next serial
+      setNotes("");
+
+      if (serialQueue.length > 0 && queueIndex + 1 < serialQueue.length) {
+        // Process next serial from batch queue
+        const nextIdx = queueIndex + 1;
+        setQueueIndex(nextIdx);
+        setSerialNumber(serialQueue[nextIdx]);
+        checkDuplicateSerial(serialQueue[nextIdx]);
+      } else {
+        // Auto-reopen camera scanner for next serial
+        setSerialQueue([]);
+        setQueueIndex(0);
+        setTimeout(() => {
+          router.push({
+            pathname: "/scanner",
+            params: {
+              orderId,
+              continuous: "false",
+            },
+          });
+        }, 300);
+      }
     } else {
-      // Auto-reopen camera scanner for next asset
+      // Single capture mode: clear everything and reopen scanner
+      setNotes("");
+      setMake("");
+      setModel("");
       setSerialQueue([]);
       setQueueIndex(0);
       setTimeout(() => {
