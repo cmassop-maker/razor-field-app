@@ -26,7 +26,7 @@ import {
   suggestModels,
 } from "@/lib/autocomplete-db";
 
-const CONDITIONS: AssetCondition[] = ["Excellent", "Good", "Fair", "Poor"];
+const CONDITIONS: AssetCondition[] = ["Used", "New"];
 
 const ASSET_TYPES: AssetType[] = [
   "Laptop",
@@ -88,7 +88,7 @@ export default function AssetCaptureScreen() {
   // Queue of serials from continuous scanning
   const [serialQueue, setSerialQueue] = useState<string[]>([]);
   const [queueIndex, setQueueIndex] = useState(0);
-  const [condition, setCondition] = useState<AssetCondition>("Good");
+  const [condition, setCondition] = useState<AssetCondition>("Used");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [savedCount, setSavedCount] = useState(0);

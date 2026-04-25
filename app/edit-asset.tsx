@@ -23,7 +23,7 @@ import {
   suggestModels,
 } from "@/lib/autocomplete-db";
 
-const CONDITIONS: AssetCondition[] = ["Excellent", "Good", "Fair", "Poor"];
+const CONDITIONS: AssetCondition[] = ["Used", "New"];
 
 const ASSET_TYPES: AssetType[] = [
   "Laptop",
@@ -73,7 +73,7 @@ export default function EditAssetScreen() {
   const [make, setMake] = useState(asset?.make ?? "");
   const [model, setModel] = useState(asset?.model ?? "");
   const [serialNumber, setSerialNumber] = useState(asset?.serialNumber ?? "");
-  const [condition, setCondition] = useState<AssetCondition>(asset?.condition ?? "Good");
+  const [condition, setCondition] = useState<AssetCondition>(asset?.condition ?? "Used");
   const [notes, setNotes] = useState(asset?.notes ?? "");
   const [error, setError] = useState("");
 
@@ -308,8 +308,8 @@ export default function EditAssetScreen() {
             <View className="flex-row flex-wrap gap-2 mb-3">
               {CONDITIONS.map((c) => {
                 const isSelected = condition === c;
-                const bgColor = c === "Excellent" || c === "Good" ? "#D1FAE5" : c === "Fair" ? "#FEF3C7" : "#FEE2E2";
-                const textColor = c === "Excellent" || c === "Good" ? "#065F46" : c === "Fair" ? "#92400E" : "#991B1B";
+                const bgColor = c === "New" || c === "Used" ? "#D1FAE5" : c === "For Parts" ? "#FEF3C7" : "#FEE2E2";
+                const textColor = c === "New" || c === "Used" ? "#065F46" : c === "For Parts" ? "#92400E" : "#991B1B";
                 return (
                   <TouchableOpacity
                     key={c}

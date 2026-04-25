@@ -22,7 +22,7 @@ describe("Domain Types", () => {
       make: "Dell",
       model: "OptiPlex 7090",
       serialNumber: "ABC123XYZ",
-      condition: "Good",
+      condition: "Used",
       notes: "Minor scratches",
       capturedAt: new Date().toISOString(),
       syncStatus: "pending",
@@ -30,7 +30,7 @@ describe("Domain Types", () => {
     expect(asset.make).toBe("Dell");
     expect(asset.model).toBe("OptiPlex 7090");
     expect(asset.serialNumber).toBe("ABC123XYZ");
-    expect(asset.condition).toBe("Good");
+    expect(asset.condition).toBe("Used");
     expect(asset.syncStatus).toBe("pending");
   });
 
@@ -42,7 +42,7 @@ describe("Domain Types", () => {
       make: "HP",
       model: "EliteBook 840",
       serialNumber: "HP-SN-GPS-001",
-      condition: "Excellent",
+      condition: "New",
       notes: "",
       capturedAt: new Date().toISOString(),
       syncStatus: "pending",
@@ -92,7 +92,7 @@ describe("Domain Types", () => {
           make: "HP",
           model: "EliteBook 840",
           serialNumber: "HP-SN-001",
-          condition: "Excellent",
+          condition: "Used",
           notes: "",
           capturedAt: new Date().toISOString(),
           syncStatus: "pending",
@@ -116,10 +116,10 @@ describe("Domain Types", () => {
   });
 
   it("should validate AssetCondition values", () => {
-    const conditions: AssetCondition[] = ["Excellent", "Good", "Fair", "Poor"];
-    expect(conditions).toHaveLength(4);
-    expect(conditions).toContain("Excellent");
-    expect(conditions).toContain("Poor");
+    const conditions: AssetCondition[] = ["Used", "New"];
+    expect(conditions).toHaveLength(2);
+    expect(conditions).toContain("Used");
+    expect(conditions).toContain("New");
   });
 
   it("should validate OrderStatus values", () => {

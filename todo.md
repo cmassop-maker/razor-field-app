@@ -58,8 +58,8 @@
 - [x] Reorder asset capture form: Make and Model before Serial Number/Scan (3-step card layout)
 - [x] Reorder asset capture: Serial Number/Scan as Step 1, Device Info as Step 2
 - [x] Add duplicate serial number detection with alert prompt
-- [ ] Block duplicate serial numbers entirely (no Keep option, clear serial and show error)
-- [ ] Auto-reopen camera scanner after saving an asset
+- [x] Block duplicate serial numbers entirely (no Keep option, clear serial and show error)
+- [x] Auto-reopen camera scanner after saving an asset
 - [x] Bug fix: Back button on asset capture goes to scanner instead of order page
 - [x] Assign Razor UID to each scanned asset via Razor ERP API
 - [x] Sync captured assets back to the Razor order via API
@@ -68,3 +68,4 @@
 - [x] Bug fix: Sync to Razor ERP fails with 400 status code when submitting assets (added required fields: quantity, uniqueId, lotAutoName, assetWorkflowStep)
 - [x] Bug fix: lotAutoName must reference existing lot from order, not asset type name (404 error) — now fetches lots from order via API
 - [x] Bug fix: assetWorkflowStep "Inbound" not found (404) — changed to "Tech Depot"
+- [x] Bug fix: Condition "Good" not found in Razor ERP — simplified to "Used" and "New" only

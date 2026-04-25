@@ -68,9 +68,9 @@ function AssetRow({
               styles.conditionBadge,
               {
                 backgroundColor:
-                  asset.condition === "Excellent" || asset.condition === "Good"
+                  asset.condition === "New" || asset.condition === "Used"
                     ? "#D1FAE5"
-                    : asset.condition === "Fair"
+                    : asset.condition === "For Parts"
                     ? "#FEF3C7"
                     : "#FEE2E2",
               },
@@ -81,9 +81,9 @@ function AssetRow({
                 fontSize: 11,
                 fontWeight: "600",
                 color:
-                  asset.condition === "Excellent" || asset.condition === "Good"
+                  asset.condition === "New" || asset.condition === "Used"
                     ? "#065F46"
-                    : asset.condition === "Fair"
+                    : asset.condition === "For Parts"
                     ? "#92400E"
                     : "#991B1B",
               }}

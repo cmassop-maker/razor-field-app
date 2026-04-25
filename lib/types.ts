@@ -2,8 +2,8 @@
 // Razor Field Companion — Domain Types
 // ============================================================
 
-/** Condition grades for captured assets */
-export type AssetCondition = "Excellent" | "Good" | "Fair" | "Poor";
+/** Condition grades for captured assets — must match Razor ERP condition names */
+export type AssetCondition = "Used" | "New";
 
 /** Asset type categories for electronics recycling */
 export type AssetType =
