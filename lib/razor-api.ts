@@ -420,8 +420,13 @@ export async function lookupManufacturers(): Promise<Array<{ id: number; name: s
   if (manufacturersCache) return manufacturersCache;
   if (!client) return [];
   try {
-    console.log("[RazorAPI] Fetching manufacturer lookup list...");
-    const res = await client.get("/Lookup/manufacturers");
+    console.log("[RazorAPI] Fetching manufacturer lookup list (all entries)...");
+    // IMPORTANT: The default page size is only 25, but there are 2600+ manufacturers.
+    // We must request a large limit to get them all, otherwise common names like
+    // "DELL" (id=136), "APPLE" (id=47), "LENOVO" (id=612) won't be found.
+    const res = await client.get("/Lookup/manufacturers", {
+      params: { limit: 5000 },
+    });
     const data = res.data;
     const items = Array.isArray(data) ? data : data?.items ?? [];
     const mapped = items.map((m: any) => ({ id: m.id ?? m.Id, name: m.name ?? m.Name ?? m.title ?? "" }));
@@ -471,8 +476,10 @@ export async function lookupCategories(): Promise<Array<{ id: number; name: stri
   if (categoriesCache) return categoriesCache;
   if (!client) return [];
   try {
-    console.log("[RazorAPI] Fetching inventory categories lookup list...");
-    const res = await client.get("/Lookup/inventory-categories");
+    console.log("[RazorAPI] Fetching inventory categories lookup list (all entries)...");
+    const res = await client.get("/Lookup/inventory-categories", {
+      params: { limit: 1000 },
+    });
     const data = res.data;
     const items = Array.isArray(data) ? data : data?.items ?? [];
     const mapped = items.map((c: any) => ({ id: c.id ?? c.Id, name: c.name ?? c.Name ?? c.title ?? "" }));
@@ -513,8 +520,10 @@ export async function lookupItemTypes(): Promise<Array<{ id: number; name: strin
   if (itemTypesCache) return itemTypesCache;
   if (!client) return [];
   try {
-    console.log("[RazorAPI] Fetching item types lookup list...");
-    const res = await client.get("/Lookup/item-types");
+    console.log("[RazorAPI] Fetching item types lookup list (all entries)...");
+    const res = await client.get("/Lookup/item-types", {
+      params: { limit: 500 },
+    });
     const data = res.data;
     const items = Array.isArray(data) ? data : data?.items ?? [];
     const mapped = items.map((t: any) => ({ id: t.id ?? t.Id, name: t.name ?? t.Name ?? t.title ?? "" }));
@@ -795,35 +804,10 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     const res = await client.post<RazorAssetResponse>("/Asset", payload);
     console.log("[RazorAPI] Asset created successfully:", JSON.stringify(res.data));
 
-    // Step 4: PATCH the asset to set manufacturer directly.
-    // The POST may not persist the manufacturer field (it may be overridden by ItemMaster).
-    // The AssetPatchDto has a "manufacturer" string field that we can set directly.
-    const assetAutoName = res.data?.autoName;
-    if (asset.make && assetAutoName) {
-      try {
-        console.log(`[RazorAPI] Patching asset ${assetAutoName} with manufacturer="${asset.make}"`);
-        await client.patch(`/Asset/${assetAutoName}`, {
-          manufacturer: asset.make,
-        });
-        console.log(`[RazorAPI] Asset ${assetAutoName} manufacturer patched successfully`);
-      } catch (patchErr: any) {
-        // Try with asset ID if autoName doesn't work
-        const assetId = res.data?.id;
-        if (assetId) {
-          try {
-            console.log(`[RazorAPI] Retrying PATCH with asset id=${assetId}`);
-            await client.patch(`/Asset/${assetId}`, {
-              manufacturer: asset.make,
-            });
-            console.log(`[RazorAPI] Asset id=${assetId} manufacturer patched successfully`);
-          } catch (patchErr2: any) {
-            console.warn(`[RazorAPI] Failed to patch manufacturer on asset: ${patchErr2?.message}`);
-          }
-        } else {
-          console.warn(`[RazorAPI] Failed to patch manufacturer on asset ${assetAutoName}: ${patchErr?.message}`);
-        }
-      }
-    }
+    // Note: Manufacturer is inherited from the ItemMaster record, not set directly on the asset.
+    // The PATCH /api/v1/Asset/{id} endpoint returns 405 for manufacturer changes.
+    // The findOrCreateItemMaster() call above ensures the correct manufacturerId is set
+    // on the ItemMaster, which then flows through to all linked assets.
 
     return res.data;
   } catch (e: any) {

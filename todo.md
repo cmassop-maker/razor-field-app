@@ -83,3 +83,4 @@
 - [x] Bug fix: Asset creation fails with 400 "UniqueId is required" — added uniqueId (UUID) back as required field; autoName is used as display UID
 - [x] Bug fix: MFG still not showing in Razor ERP — manufacturer flows via ItemMaster, not asset payload. Now patches existing ItemMasters with manufacturerId, removed invalid manufacturerId from asset payload, added debug logging for manufacturer lookup
 - [x] Bug fix: MFG still blank — added PATCH /api/v1/Asset/{autoName} with manufacturer string immediately after asset creation (with fallback to asset id)
+- [x] Bug fix: MFG STILL blank (ROOT CAUSE FOUND) — lookupManufacturers() only fetched 25 of 2605 manufacturers (default page size), so findManufacturerId() never found Dell/Apple/Lenovo. Fix: added limit=5000 to all lookup API calls. Removed useless asset PATCH (returns 405). Verified: Dell→id=136, Apple→id=47, Lenovo→id=612 now resolve correctly. ItemMaster PATCH confirmed working.
