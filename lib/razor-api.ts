@@ -705,9 +705,6 @@ export interface RazorAssetResponse {
 export async function createAsset(asset: CreateAssetPayload): Promise<RazorAssetResponse> {
   if (!client) throw new Error("Razor API client not initialized");
 
-  // Generate a unique ID for this asset (UUID v4 format)
-  const uniqueId = generateUUID();
-
   // Step 1: Resolve the ItemMaster ID for this model.
   // Razor ERP validates the model against its ItemMaster table.
   // If the model doesn't exist, we auto-create it.
@@ -721,8 +718,23 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     }
   }
 
-  // Step 2: Build the payload with all required fields per Razor ERP validation:
-  // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
+  // Step 2: Resolve the manufacturerId for this make.
+  // Razor ERP may require the numeric manufacturerId in addition to the manufacturer string.
+  let manufacturerId: number | null = null;
+  if (asset.make) {
+    try {
+      manufacturerId = await findManufacturerId(asset.make);
+      if (manufacturerId) {
+        console.log(`[RazorAPI] Resolved manufacturerId=${manufacturerId} for make "${asset.make}"`);
+      }
+    } catch (e: any) {
+      console.warn(`[RazorAPI] Could not resolve manufacturerId for "${asset.make}": ${e?.message}`);
+    }
+  }
+
+  // Step 3: Build the payload with all required fields per Razor ERP validation:
+  // Required: quantity, lotAutoName, assetWorkflowStep
+  // Do NOT send uniqueId — let Razor auto-generate the UID (autoName like AST-00032361)
   // lotAutoName must reference an existing lot on the order (e.g. "21502")
   // Field names verified from Razor ERP Swagger docs (POST /api/v1/Asset):
   //   manufacturer (NOT make/mfg), serial (NOT serialNumber/serial#), model
@@ -731,7 +743,6 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     model: asset.model,
     serial: asset.serialNumber,
     quantity: 1,
-    uniqueId: uniqueId,
     lotAutoName: asset.lotAutoName || "Asset",
     assetWorkflowStep: "Data Collection",
   };
@@ -739,6 +750,11 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
   // Include the resolved itemMasterId if we have one
   if (itemMasterId) {
     payload.itemMasterId = itemMasterId;
+  }
+
+  // Include the resolved manufacturerId if we have one
+  if (manufacturerId) {
+    payload.manufacturerId = manufacturerId;
   }
 
   // Add optional fields if provided

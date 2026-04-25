@@ -78,3 +78,5 @@
 - [x] Bug fix: Asset creation fails with 404 "Master item not found" — implemented findOrCreateItemMaster: searches by-item-number and /all, auto-creates if missing, caches results
 - [x] Bug fix: ItemMaster auto-create failing with 400 "ItemTypeId must be greater than 0" — added lookupItemTypes and findItemTypeId to resolve itemTypeId from Lookup API
 - [x] Bug fix: Signature upload failing — user confirmed it now works fine
+- [x] Bug fix: MFG (manufacturer) not transferring to Razor ERP when creating assets — now also sends manufacturerId (numeric) alongside manufacturer string
+- [x] Bug fix: Asset UID shows random UUID instead of Razor-assigned autoName (e.g. AST-00032361) — removed uniqueId from payload so Razor auto-generates the UID
