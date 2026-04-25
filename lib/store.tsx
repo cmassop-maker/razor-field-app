@@ -14,7 +14,7 @@ import type {
   RazorInboundOrder,
   SyncQueueItem,
 } from "./types";
-import { initRazorClient, clearRazorClient } from "./razor-api";
+import { initRazorClient, clearRazorClient, signOut } from "./razor-api";
 
 // ---- Secure storage helpers ----
 async function secureSet(key: string, value: string) {
@@ -48,7 +48,7 @@ interface AppState {
 }
 
 const initialState: AppState = {
-  apiConfig: { baseUrl: "", apiKey: "", isConnected: false },
+  apiConfig: { baseUrl: "", accessToken: "", isConnected: false },
   orders: [],
   syncQueue: [],
   isLoading: true,
@@ -163,7 +163,7 @@ function reducer(state: AppState, action: Action): AppState {
 interface StoreContextValue {
   state: AppState;
   dispatch: React.Dispatch<Action>;
-  saveCredentials: (baseUrl: string, apiKey: string) => Promise<void>;
+  saveCredentials: (baseUrl: string, accessToken: string, companyId: number, username: string) => Promise<void>;
   loadCredentials: () => Promise<ApiConfig | null>;
   clearCredentials: () => Promise<void>;
   persistOrders: (orders: LocalOrder[]) => Promise<void>;
@@ -175,23 +175,43 @@ const StoreContext = createContext<StoreContextValue | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
-  const saveCredentials = useCallback(async (baseUrl: string, apiKey: string) => {
-    await secureSet("razor_base_url", baseUrl);
-    await secureSet("razor_api_key", apiKey);
-  }, []);
+  const saveCredentials = useCallback(
+    async (baseUrl: string, accessToken: string, companyId: number, username: string) => {
+      await secureSet("razor_base_url", baseUrl);
+      await secureSet("razor_access_token", accessToken);
+      await secureSet("razor_company_id", String(companyId));
+      await secureSet("razor_username", username);
+    },
+    []
+  );
 
   const loadCredentials = useCallback(async (): Promise<ApiConfig | null> => {
     const baseUrl = await secureGet("razor_base_url");
-    const apiKey = await secureGet("razor_api_key");
-    if (baseUrl && apiKey) {
-      return { baseUrl, apiKey, isConnected: false };
+    const accessToken = await secureGet("razor_access_token");
+    const companyIdStr = await secureGet("razor_company_id");
+    const username = await secureGet("razor_username");
+    if (baseUrl && accessToken) {
+      return {
+        baseUrl,
+        accessToken,
+        companyId: companyIdStr ? Number(companyIdStr) : undefined,
+        username: username ?? undefined,
+        isConnected: false,
+      };
     }
     return null;
   }, []);
 
   const clearCredentials = useCallback(async () => {
     await secureDelete("razor_base_url");
-    await secureDelete("razor_api_key");
+    await secureDelete("razor_access_token");
+    await secureDelete("razor_company_id");
+    await secureDelete("razor_username");
+    try {
+      await signOut();
+    } catch {
+      // best-effort
+    }
     clearRazorClient();
     dispatch({ type: "LOGOUT" });
   }, []);
@@ -214,12 +234,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return [];
   }, []);
 
-  // Boot: load saved credentials
+  // Boot: load saved credentials and restore session
   useEffect(() => {
     (async () => {
       const creds = await loadCredentials();
-      if (creds) {
-        initRazorClient(creds.baseUrl, creds.apiKey);
+      if (creds && creds.accessToken) {
+        initRazorClient(creds.baseUrl, creds.accessToken);
         dispatch({
           type: "SET_API_CONFIG",
           payload: { ...creds, isConnected: true },

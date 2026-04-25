@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Text,
   View,
@@ -8,46 +8,74 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useStore } from "@/lib/store";
-import { initRazorClient, testConnection } from "@/lib/razor-api";
+import { loginWithCredentials, initRazorClient } from "@/lib/razor-api";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
 export default function LoginScreen() {
   const { dispatch, saveCredentials } = useStore();
   const colors = useColors();
+
   const [baseUrl, setBaseUrl] = useState("https://apiprod.razorerp.com");
-  const [apiKey, setApiKey] = useState("");
+  const [companyId, setCompanyId] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
-  async function handleConnect() {
-    if (!baseUrl.trim() || !apiKey.trim()) {
-      setError("Please enter both the API URL and API Key.");
+  const usernameRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
+  async function handleLogin() {
+    if (!companyId.trim() || !username.trim() || !password.trim()) {
+      setError("Please enter your Company ID, username, and password.");
+      return;
+    }
+    const parsedCompanyId = parseInt(companyId.trim(), 10);
+    if (isNaN(parsedCompanyId)) {
+      setError("Company ID must be a number.");
       return;
     }
     setError("");
     setIsConnecting(true);
     try {
-      const ok = await testConnection(baseUrl.trim(), apiKey.trim());
-      if (ok) {
-        initRazorClient(baseUrl.trim(), apiKey.trim());
-        await saveCredentials(baseUrl.trim(), apiKey.trim());
+      const result = await loginWithCredentials(
+        baseUrl.trim(),
+        parsedCompanyId,
+        username.trim(),
+        password.trim()
+      );
+      if (result.accessToken) {
+        initRazorClient(baseUrl.trim(), result.accessToken);
+        await saveCredentials(baseUrl.trim(), result.accessToken, parsedCompanyId, username.trim());
         dispatch({
           type: "SET_API_CONFIG",
-          payload: { baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), isConnected: true },
+          payload: {
+            baseUrl: baseUrl.trim(),
+            accessToken: result.accessToken,
+            companyId: parsedCompanyId,
+            username: username.trim(),
+            isConnected: true,
+          },
         });
         dispatch({ type: "SET_AUTHENTICATED", payload: true });
         router.replace("/(tabs)");
       } else {
-        setError("Connection failed. Please check your API URL and API Key.");
+        setError("Login failed. No access token received.");
       }
     } catch (e: any) {
-      setError(e?.message || "An unexpected error occurred.");
+      const msg =
+        e?.response?.status === 401
+          ? "Invalid credentials. Please check your Company ID, username, and password."
+          : e?.response?.status === 400
+            ? "Bad request. Please verify your login details."
+            : e?.message || "An unexpected error occurred.";
+      setError(msg);
     } finally {
       setIsConnecting(false);
     }
@@ -73,41 +101,91 @@ export default function LoginScreen() {
                 <MaterialIcons name="recycling" size={44} color="#FFFFFF" />
               </View>
               <Text className="text-3xl font-bold text-foreground">Razor Field</Text>
-              <Text className="text-base text-muted mt-1">Connect to your Razor ERP</Text>
+              <Text className="text-base text-muted mt-1">Sign in with your Razor ERP account</Text>
             </View>
 
             {/* Form */}
             <View className="gap-4">
               <View>
-                <Text className="text-sm font-medium text-muted mb-1.5">API Base URL</Text>
+                <Text className="text-sm font-medium text-muted mb-1.5">Company ID</Text>
                 <TextInput
                   className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
-                  value={baseUrl}
-                  onChangeText={setBaseUrl}
-                  placeholder="https://apiprod.razorerp.com"
+                  value={companyId}
+                  onChangeText={setCompanyId}
+                  placeholder="Enter your company ID"
                   placeholderTextColor={colors.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  keyboardType="url"
+                  keyboardType="number-pad"
                   returnKeyType="next"
+                  onSubmitEditing={() => usernameRef.current?.focus()}
                 />
               </View>
 
               <View>
-                <Text className="text-sm font-medium text-muted mb-1.5">API Key</Text>
+                <Text className="text-sm font-medium text-muted mb-1.5">Username</Text>
                 <TextInput
+                  ref={usernameRef}
                   className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
-                  value={apiKey}
-                  onChangeText={setApiKey}
-                  placeholder="Enter your Razor ERP API key"
+                  value={username}
+                  onChangeText={setUsername}
+                  placeholder="Enter your Razor ERP username"
+                  placeholderTextColor={colors.muted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="next"
+                  onSubmitEditing={() => passwordRef.current?.focus()}
+                />
+              </View>
+
+              <View>
+                <Text className="text-sm font-medium text-muted mb-1.5">Password</Text>
+                <TextInput
+                  ref={passwordRef}
+                  className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
+                  value={password}
+                  onChangeText={setPassword}
+                  placeholder="Enter your password"
                   placeholderTextColor={colors.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry
                   returnKeyType="done"
-                  onSubmitEditing={handleConnect}
+                  onSubmitEditing={handleLogin}
                 />
               </View>
+
+              {/* Advanced: API URL toggle */}
+              <TouchableOpacity
+                onPress={() => setShowAdvanced(!showAdvanced)}
+                activeOpacity={0.7}
+              >
+                <View className="flex-row items-center gap-1">
+                  <MaterialIcons
+                    name={showAdvanced ? "expand-less" : "expand-more"}
+                    size={18}
+                    color={colors.muted}
+                  />
+                  <Text className="text-sm text-muted">Advanced Settings</Text>
+                </View>
+              </TouchableOpacity>
+
+              {showAdvanced ? (
+                <View>
+                  <Text className="text-sm font-medium text-muted mb-1.5">API Base URL</Text>
+                  <TextInput
+                    className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
+                    value={baseUrl}
+                    onChangeText={setBaseUrl}
+                    placeholder="https://apiprod.razorerp.com"
+                    placeholderTextColor={colors.muted}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="url"
+                    returnKeyType="done"
+                  />
+                </View>
+              ) : null}
 
               {error ? (
                 <View className="bg-error/10 rounded-lg px-4 py-3">
@@ -121,14 +199,14 @@ export default function LoginScreen() {
                   backgroundColor: colors.primary,
                   opacity: isConnecting ? 0.7 : 1,
                 }}
-                onPress={handleConnect}
+                onPress={handleLogin}
                 disabled={isConnecting}
                 activeOpacity={0.8}
               >
                 {isConnecting ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
-                  <Text className="text-white font-semibold text-base">Connect to Razor ERP</Text>
+                  <Text className="text-white font-semibold text-base">Sign In</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -136,8 +214,8 @@ export default function LoginScreen() {
             {/* Help text */}
             <View className="mt-8 items-center">
               <Text className="text-xs text-muted text-center leading-5">
-                Your API key can be found in Razor ERP under{"\n"}
-                Account Settings. Credentials are stored securely on this device.
+                Use the same credentials you use to log in to Razor ERP.{"\n"}
+                Your Company ID can be found in your Razor ERP account settings.
               </Text>
             </View>
           </View>

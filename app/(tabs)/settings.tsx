@@ -18,12 +18,12 @@ export default function SettingsScreen() {
       return;
     }
     Alert.alert(
-      "Disconnect",
-      "Are you sure you want to disconnect from Razor ERP? Local data will be cleared.",
+      "Sign Out",
+      "Are you sure you want to sign out of Razor ERP? Local data will be cleared.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Disconnect",
+          text: "Sign Out",
           style: "destructive",
           onPress: () => {
             clearCredentials();
@@ -41,37 +41,53 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Connection Status */}
-        <View
-          className="bg-surface border border-border rounded-2xl p-4 mb-4"
-        >
+        {/* Account Info */}
+        <View className="bg-surface border border-border rounded-2xl p-4 mb-4">
           <Text className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">
-            Connection
+            Account
           </Text>
-          <View className="flex-row items-center justify-between mb-3">
-            <Text className="text-base text-foreground">Status</Text>
-            <View className="flex-row items-center gap-2">
-              <View
-                className="w-2.5 h-2.5 rounded-full"
-                style={{
-                  backgroundColor: state.apiConfig.isConnected ? colors.success : colors.error,
-                }}
-              />
-              <Text
-                className="text-sm font-medium"
-                style={{
-                  color: state.apiConfig.isConnected ? colors.success : colors.error,
-                }}
-              >
-                {state.apiConfig.isConnected ? "Connected" : "Disconnected"}
+          <View className="flex-row items-center gap-3 mb-3">
+            <View
+              className="w-10 h-10 rounded-full items-center justify-center"
+              style={{ backgroundColor: colors.primary }}
+            >
+              <MaterialIcons name="person" size={22} color="#FFFFFF" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-base font-semibold text-foreground">
+                {state.apiConfig.username || "Unknown User"}
+              </Text>
+              <Text className="text-sm text-muted">
+                Company ID: {state.apiConfig.companyId ?? "N/A"}
               </Text>
             </View>
           </View>
-          <View className="flex-row items-center justify-between">
-            <Text className="text-base text-foreground">API URL</Text>
-            <Text className="text-sm text-muted" numberOfLines={1} style={{ maxWidth: 200 }}>
-              {state.apiConfig.baseUrl || "Not configured"}
-            </Text>
+          <View className="border-t border-border pt-3 mt-1">
+            <View className="flex-row items-center justify-between mb-2">
+              <Text className="text-base text-foreground">Status</Text>
+              <View className="flex-row items-center gap-2">
+                <View
+                  className="w-2.5 h-2.5 rounded-full"
+                  style={{
+                    backgroundColor: state.apiConfig.isConnected ? colors.success : colors.error,
+                  }}
+                />
+                <Text
+                  className="text-sm font-medium"
+                  style={{
+                    color: state.apiConfig.isConnected ? colors.success : colors.error,
+                  }}
+                >
+                  {state.apiConfig.isConnected ? "Connected" : "Disconnected"}
+                </Text>
+              </View>
+            </View>
+            <View className="flex-row items-center justify-between">
+              <Text className="text-base text-foreground">Server</Text>
+              <Text className="text-sm text-muted" numberOfLines={1} style={{ maxWidth: 200 }}>
+                {state.apiConfig.baseUrl || "Not configured"}
+              </Text>
+            </View>
           </View>
         </View>
 
@@ -131,7 +147,7 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Logout */}
+        {/* Sign Out */}
         <TouchableOpacity
           className="rounded-2xl py-4 items-center border"
           style={{ borderColor: colors.error, backgroundColor: "transparent" }}
@@ -141,7 +157,7 @@ export default function SettingsScreen() {
           <View className="flex-row items-center gap-2">
             <MaterialIcons name="logout" size={18} color={colors.error} />
             <Text className="font-semibold text-base" style={{ color: colors.error }}>
-              Disconnect from Razor ERP
+              Sign Out
             </Text>
           </View>
         </TouchableOpacity>

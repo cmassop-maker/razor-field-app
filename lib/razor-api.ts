@@ -1,17 +1,48 @@
 // ============================================================
-// Razor ERP API Client
+// Razor ERP API Client — JWT Authentication
 // ============================================================
 import axios, { AxiosInstance } from "axios";
-import type { RazorInboundOrder, CapturedAsset } from "./types";
+import type { RazorInboundOrder, CapturedAsset, JwtAuthResponse, IssueJwtDto } from "./types";
 
 let client: AxiosInstance | null = null;
+let currentBaseUrl: string = "";
 
-export function initRazorClient(baseUrl: string, apiKey: string) {
+/**
+ * Authenticate with Razor ERP using username/password.
+ * POST /api/v1/JwtAuth with { companyId, login, password }
+ * Returns the JWT access token on success.
+ */
+export async function loginWithCredentials(
+  baseUrl: string,
+  companyId: number,
+  login: string,
+  password: string
+): Promise<JwtAuthResponse> {
   const cleanUrl = baseUrl.replace(/\/+$/, "");
+  const res = await axios.post<JwtAuthResponse>(
+    `${cleanUrl}/api/v1/JwtAuth`,
+    { companyId, login, password } satisfies IssueJwtDto,
+    {
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      timeout: 15000,
+    }
+  );
+  if (!res.data?.accessToken) {
+    throw new Error("Login failed: no access token returned.");
+  }
+  return res.data;
+}
+
+/**
+ * Initialise the reusable Axios client with a JWT access token.
+ */
+export function initRazorClient(baseUrl: string, accessToken: string) {
+  const cleanUrl = baseUrl.replace(/\/+$/, "");
+  currentBaseUrl = cleanUrl;
   client = axios.create({
     baseURL: `${cleanUrl}/api/v1`,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
@@ -20,30 +51,72 @@ export function initRazorClient(baseUrl: string, apiKey: string) {
   return client;
 }
 
+/**
+ * Update the bearer token on the existing client (e.g. after refresh).
+ */
+export function updateClientToken(accessToken: string) {
+  if (client) {
+    client.defaults.headers.Authorization = `Bearer ${accessToken}`;
+  }
+}
+
 export function getRazorClient(): AxiosInstance | null {
   return client;
 }
 
 export function clearRazorClient() {
   client = null;
+  currentBaseUrl = "";
 }
 
-// ---- Connection test ----
+// ---- Connection test (uses existing client) ----
 
-export async function testConnection(baseUrl: string, apiKey: string): Promise<boolean> {
+export async function testConnection(): Promise<boolean> {
+  if (!client) return false;
   try {
-    const tempClient = axios.create({
-      baseURL: `${baseUrl.replace(/\/+$/, "")}/api/v1`,
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
-      },
-      timeout: 10000,
-    });
-    const res = await tempClient.get("/InboundOrder", { params: { pageSize: 1 } });
+    const res = await client.get("/InboundOrder", { params: { pageSize: 1 } });
     return res.status === 200;
   } catch {
     return false;
+  }
+}
+
+// ---- Token refresh ----
+
+export async function refreshToken(): Promise<JwtAuthResponse | null> {
+  if (!currentBaseUrl) return null;
+  try {
+    const res = await axios.post<JwtAuthResponse>(
+      `${currentBaseUrl}/api/v1/JwtAuth/refresh`,
+      {},
+      {
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        timeout: 10000,
+        withCredentials: true, // send refresh token cookie
+      }
+    );
+    if (res.data?.accessToken) {
+      updateClientToken(res.data.accessToken);
+      return res.data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ---- Sign out ----
+
+export async function signOut(): Promise<void> {
+  if (!currentBaseUrl) return;
+  try {
+    await axios.post(
+      `${currentBaseUrl}/api/v1/JwtAuth/sign-out`,
+      {},
+      { timeout: 5000, withCredentials: true }
+    );
+  } catch {
+    // Best-effort sign out
   }
 }
 
@@ -54,7 +127,6 @@ export async function fetchInboundOrders(): Promise<RazorInboundOrder[]> {
   try {
     const res = await client.get("/InboundOrder/all");
     const data = res.data;
-    // Normalize response — API may return array directly or wrapped
     const orders: RazorInboundOrder[] = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
     return orders;
   } catch (error: any) {
@@ -112,7 +184,6 @@ export async function lookupAssetBySerial(serialNumber: string) {
 
 export async function uploadOrderFile(orderId: number, base64Data: string, fileName: string) {
   if (!client) throw new Error("Razor API client not initialized");
-  // Convert base64 to blob for multipart upload
   const formData = new FormData();
   formData.append("file", {
     uri: `data:image/png;base64,${base64Data}`,

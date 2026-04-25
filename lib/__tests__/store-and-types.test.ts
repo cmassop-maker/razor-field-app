@@ -9,6 +9,8 @@ import type {
   AssetCondition,
   OrderStatus,
   SyncStatus,
+  JwtAuthResponse,
+  IssueJwtDto,
 } from "../types";
 
 describe("Domain Types", () => {
@@ -107,14 +109,39 @@ describe("Domain Types", () => {
     expect(statuses).toHaveLength(4);
   });
 
-  it("should create a valid ApiConfig", () => {
+  it("should create a valid ApiConfig with JWT fields", () => {
     const config: ApiConfig = {
       baseUrl: "https://apiprod.razorerp.com",
-      apiKey: "test-api-key",
+      accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test",
+      companyId: 42,
+      username: "driver1",
       isConnected: true,
     };
     expect(config.baseUrl).toBe("https://apiprod.razorerp.com");
+    expect(config.accessToken).toContain("eyJ");
+    expect(config.companyId).toBe(42);
+    expect(config.username).toBe("driver1");
     expect(config.isConnected).toBe(true);
+  });
+
+  it("should create a valid JwtAuthResponse", () => {
+    const response: JwtAuthResponse = {
+      accessToken: "eyJhbGciOiJIUzI1NiJ9.test-token",
+      refreshTokenCookieName: "razor_refresh",
+    };
+    expect(response.accessToken).toBeTruthy();
+    expect(response.refreshTokenCookieName).toBe("razor_refresh");
+  });
+
+  it("should create a valid IssueJwtDto", () => {
+    const dto: IssueJwtDto = {
+      companyId: 42,
+      login: "driver1",
+      password: "securePass123",
+    };
+    expect(dto.companyId).toBe(42);
+    expect(dto.login).toBe("driver1");
+    expect(dto.password).toBe("securePass123");
   });
 
   it("should create a valid SyncQueueItem", () => {
@@ -134,10 +161,14 @@ describe("Domain Types", () => {
 describe("Razor API Module", () => {
   it("should export required functions from razor-api", async () => {
     const api = await import("../razor-api");
+    expect(typeof api.loginWithCredentials).toBe("function");
     expect(typeof api.initRazorClient).toBe("function");
     expect(typeof api.getRazorClient).toBe("function");
     expect(typeof api.clearRazorClient).toBe("function");
+    expect(typeof api.updateClientToken).toBe("function");
     expect(typeof api.testConnection).toBe("function");
+    expect(typeof api.refreshToken).toBe("function");
+    expect(typeof api.signOut).toBe("function");
     expect(typeof api.fetchInboundOrders).toBe("function");
     expect(typeof api.fetchInboundOrder).toBe("function");
     expect(typeof api.createAsset).toBe("function");
@@ -147,7 +178,6 @@ describe("Razor API Module", () => {
 
   it("should return null client before initialization", async () => {
     const api = await import("../razor-api");
-    // Clear any existing client
     api.clearRazorClient();
     expect(api.getRazorClient()).toBeNull();
   });
@@ -158,12 +188,18 @@ describe("Razor API Module", () => {
     await expect(api.fetchInboundOrders()).rejects.toThrow("Razor API client not initialized");
   });
 
-  it("should initialize client with correct config", async () => {
+  it("should initialize client with JWT token", async () => {
     const api = await import("../razor-api");
-    const client = api.initRazorClient("https://apiprod.razorerp.com", "test-key");
+    const client = api.initRazorClient("https://apiprod.razorerp.com", "test-jwt-token");
     expect(client).toBeTruthy();
     expect(api.getRazorClient()).toBeTruthy();
-    // Clean up
     api.clearRazorClient();
+  });
+
+  it("should return false for testConnection without client", async () => {
+    const api = await import("../razor-api");
+    api.clearRazorClient();
+    const result = await api.testConnection();
+    expect(result).toBe(false);
   });
 });

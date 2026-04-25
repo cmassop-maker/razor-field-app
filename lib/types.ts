@@ -72,8 +72,23 @@ export interface LocalOrder {
 
 export interface ApiConfig {
   baseUrl: string;
-  apiKey: string;
+  accessToken: string;
+  companyId?: number;
+  username?: string;
   isConnected: boolean;
+}
+
+/** Response from POST /api/v1/JwtAuth */
+export interface JwtAuthResponse {
+  accessToken: string | null;
+  refreshTokenCookieName: string | null;
+}
+
+/** Request body for POST /api/v1/JwtAuth */
+export interface IssueJwtDto {
+  companyId: number;
+  login: string;
+  password: string;
 }
 
 export interface SyncQueueItem {

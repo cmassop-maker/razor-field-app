@@ -20,3 +20,9 @@
 - [x] Update app.config.ts with branding
 - [x] Write tests for core functionality
 - [x] Final polish and checkpoint
+- [x] Replace API key auth with username/password JWT login
+- [x] Update login screen with Company ID, Username, Password fields
+- [x] Update razor-api.ts to use JWT auth with /api/v1/JwtAuth endpoint
+- [x] Add token refresh logic using /api/v1/JwtAuth/refresh
+- [x] Update settings screen to show logged-in user info
+- [x] Update store to manage JWT tokens instead of API key
