@@ -80,3 +80,4 @@
 - [x] Bug fix: Signature upload failing — user confirmed it now works fine
 - [x] Bug fix: MFG (manufacturer) not transferring to Razor ERP when creating assets — now also sends manufacturerId (numeric) alongside manufacturer string
 - [x] Bug fix: Asset UID shows random UUID instead of Razor-assigned autoName (e.g. AST-00032361) — removed uniqueId from payload so Razor auto-generates the UID
+- [x] Bug fix: Asset creation fails with 400 "UniqueId is required" — added uniqueId (UUID) back as required field; autoName is used as display UID

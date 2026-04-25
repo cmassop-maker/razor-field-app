@@ -733,16 +733,19 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
   }
 
   // Step 3: Build the payload with all required fields per Razor ERP validation:
-  // Required: quantity, lotAutoName, assetWorkflowStep
-  // Do NOT send uniqueId — let Razor auto-generate the UID (autoName like AST-00032361)
+  // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
+  // uniqueId is required (cannot be empty) — we send a UUID as the internal identifier.
+  // Razor will also auto-generate an autoName (e.g. AST-00032361) which we use as the display UID.
   // lotAutoName must reference an existing lot on the order (e.g. "21502")
   // Field names verified from Razor ERP Swagger docs (POST /api/v1/Asset):
   //   manufacturer (NOT make/mfg), serial (NOT serialNumber/serial#), model
+  const uniqueId = generateUUID();
   const payload: Record<string, unknown> = {
     manufacturer: asset.make,
     model: asset.model,
     serial: asset.serialNumber,
     quantity: 1,
+    uniqueId: uniqueId,
     lotAutoName: asset.lotAutoName || "Asset",
     assetWorkflowStep: "Data Collection",
   };
