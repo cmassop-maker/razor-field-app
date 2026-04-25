@@ -19,6 +19,8 @@ import NativeMap from "@/components/native-map";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import type { CapturedAsset } from "@/lib/types";
 import { generateAndShareReport, printReport } from "@/lib/generate-report";
+import { generateAndShareBol, printBol } from "@/lib/generate-bol";
+import { generateAndShareWorkOrder, printWorkOrder } from "@/lib/generate-work-order";
 
 function AssetRow({
   asset,
@@ -249,27 +251,34 @@ export default function OrderDetailScreen() {
         <TouchableOpacity
           onPress={() => {
             if (Platform.OS === "web") {
-              generateAndShareReport(order).catch((e) =>
+              generateAndShareReport(order).catch(() =>
                 Alert.alert("Error", "Failed to generate report")
               );
             } else {
               Alert.alert(
-                "Order Report",
-                "Generate a PDF report for this order?",
+                "Documents",
+                "Select a document to generate:",
                 [
                   { text: "Cancel", style: "cancel" },
                   {
-                    text: "Share PDF",
+                    text: "Bill of Lading",
                     onPress: () =>
-                      generateAndShareReport(order).catch((e) =>
-                        Alert.alert("Error", e?.message || "Failed to generate report")
+                      generateAndShareBol(order).catch((e) =>
+                        Alert.alert("Error", e?.message || "Failed to generate BOL")
                       ),
                   },
                   {
-                    text: "Print",
+                    text: "Work Order",
                     onPress: () =>
-                      printReport(order).catch((e) =>
-                        Alert.alert("Error", e?.message || "Failed to print report")
+                      generateAndShareWorkOrder(order).catch((e) =>
+                        Alert.alert("Error", e?.message || "Failed to generate Work Order")
+                      ),
+                  },
+                  {
+                    text: "Asset Report",
+                    onPress: () =>
+                      generateAndShareReport(order).catch((e) =>
+                        Alert.alert("Error", e?.message || "Failed to generate report")
                       ),
                   },
                 ]
@@ -278,7 +287,7 @@ export default function OrderDetailScreen() {
           }}
           style={{ padding: 4, marginRight: 8 }}
         >
-          <MaterialIcons name="picture-as-pdf" size={24} color={colors.error} />
+          <MaterialIcons name="description" size={24} color={colors.primary} />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() =>

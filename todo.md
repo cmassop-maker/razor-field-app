@@ -91,5 +91,6 @@
 - [x] Continuous/batch scan mode — new Batch Scan screen where user sets make, model, asset type, and condition once, then scans multiple serial numbers consecutively. Each scan auto-creates an asset. Includes duplicate detection, running count, remove individual items, and "Scan More" to re-open camera. Accessible from order detail via new "Batch Scan" button.
 - [x] Bug fix: Batch scan feature not working — root cause was state loss during navigation to/from scanner. Fixed by persisting batch state (make, model, asset type, condition, saved assets) to AsyncStorage before navigating to scanner, and restoring on return. Scanner properly returns scanned serials via params, batch-scan processes them and creates assets with the pre-set device info.
 - [x] Continuous capture mode should keep same make, model, asset type, and condition — only clear serial number and notes after saving
-- [ ] Add Razor BOL (Bill of Lading) document viewing/downloading to the app
-- [ ] Add Razor Work Order document viewing/downloading to the app
+- [x] Build BOL (Bill of Lading) PDF document in-app using order data from Razor API — includes shipper/consignee info, asset manifest table, special instructions, signature, and professional layout
+- [x] Build Work Order PDF document in-app using order data from Razor API — includes customer/pickup info, driver checklist, asset summary by type/condition, detailed asset table, and signature sections
+- [x] Add document generation buttons (BOL, Work Order, Asset Report) to order detail screen — single document icon opens action sheet with all 3 options
