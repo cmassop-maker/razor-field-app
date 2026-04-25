@@ -18,6 +18,7 @@ describe("Domain Types", () => {
     const asset: CapturedAsset = {
       localId: "test-uuid-1",
       orderId: 100,
+      assetType: "Desktop",
       make: "Dell",
       model: "OptiPlex 7090",
       serialNumber: "ABC123XYZ",
@@ -37,6 +38,7 @@ describe("Domain Types", () => {
     const asset: CapturedAsset = {
       localId: "test-uuid-gps",
       orderId: 200,
+      assetType: "Laptop",
       make: "HP",
       model: "EliteBook 840",
       serialNumber: "HP-SN-GPS-001",
@@ -86,6 +88,7 @@ describe("Domain Types", () => {
         {
           localId: "a1",
           orderId: 100,
+          assetType: "Laptop",
           make: "HP",
           model: "EliteBook 840",
           serialNumber: "HP-SN-001",

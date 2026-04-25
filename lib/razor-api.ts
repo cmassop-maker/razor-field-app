@@ -2,7 +2,14 @@
 // Razor ERP API Client — JWT Authentication
 // ============================================================
 import axios, { AxiosInstance } from "axios";
-import type { RazorInboundOrder, CapturedAsset, JwtAuthResponse, IssueJwtDto } from "./types";
+import type {
+  RazorInboundOrder,
+  CapturedAsset,
+  JwtAuthResponse,
+  IssueJwtDto,
+  RazorContact,
+  RazorAddress,
+} from "./types";
 
 let client: AxiosInstance | null = null;
 let currentBaseUrl: string = "";
@@ -13,7 +20,6 @@ let currentBaseUrl: string = "";
  */
 export async function resolveCompanyId(baseUrl: string): Promise<number> {
   const cleanUrl = baseUrl.replace(/\/+$/, "");
-  // Extract hostname from the URL (e.g. "monwire.razorerp.com")
   let hostname: string;
   try {
     hostname = new URL(cleanUrl).host;
@@ -35,10 +41,6 @@ export async function resolveCompanyId(baseUrl: string): Promise<number> {
 
 /**
  * Authenticate with Razor ERP using username/password.
- * The baseUrl is the tenant-specific URL (e.g. https://monwire.razorerp.com).
- * Automatically resolves the Company ID from the URL, then
- * POST /api/v1/Auth with { companyId, login, password }
- * Returns the JWT access token and resolved companyId on success.
  */
 export async function loginWithCredentials(
   baseUrl: string,
@@ -75,7 +77,7 @@ export function initRazorClient(baseUrl: string, accessToken: string) {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    timeout: 15000,
+    timeout: 30000,
   });
   return client;
 }
@@ -98,12 +100,12 @@ export function clearRazorClient() {
   currentBaseUrl = "";
 }
 
-// ---- Connection test (uses existing client) ----
+// ---- Connection test ----
 
 export async function testConnection(): Promise<boolean> {
   if (!client) return false;
   try {
-    const res = await client.get("/InboundOrder", { params: { pageSize: 1 } });
+    const res = await client.get("/InboundOrder/all", { params: { offset: 0, limit: 1 } });
     return res.status === 200;
   } catch {
     return false;
@@ -121,7 +123,7 @@ export async function refreshToken(): Promise<JwtAuthResponse | null> {
       {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
         timeout: 10000,
-        withCredentials: true, // send refresh token cookie
+        withCredentials: true,
       }
     );
     if (res.data?.accessToken) {
@@ -151,40 +153,201 @@ export async function signOut(): Promise<void> {
 
 // ---- Inbound Orders ----
 
+interface PageOfResponse<T> {
+  items: T[] | null;
+  records: number;
+  totalCount: number;
+}
+
 /**
- * Fetch ALL inbound orders from Razor ERP.
- * The /InboundOrder/all endpoint uses offset + limit pagination.
- * We use a large limit per request and loop until all orders are retrieved.
+ * Fetch ALL inbound orders from Razor ERP using offset/limit pagination.
+ * The API returns { items, records, totalCount } — we loop until we have them all.
+ * An optional onProgress callback reports fetched/total counts for UI updates.
  */
-export async function fetchInboundOrders(): Promise<RazorInboundOrder[]> {
+export async function fetchInboundOrders(
+  onProgress?: (fetched: number, total: number) => void
+): Promise<RazorInboundOrder[]> {
   if (!client) throw new Error("Razor API client not initialized");
   const allOrders: RazorInboundOrder[] = [];
-  const batchSize = 500; // large batch to minimise round-trips
   let offset = 0;
+  let totalCount = -1;
+  let pageSize = 25; // will be detected from first response
+  let batchNum = 0;
 
   try {
     while (true) {
-      const res = await client.get("/InboundOrder/all", {
-        params: { offset, limit: batchSize },
-      });
+      batchNum++;
+      console.log(`[RazorAPI] Fetching batch #${batchNum}: offset=${offset}`);
+      // Send multiple pagination parameter styles to maximize compatibility
+      // Some ASP.NET APIs use Offset/Limit, others use offset/limit, PageSize/Page, etc.
+      const res = await client.get<PageOfResponse<RazorInboundOrder> | RazorInboundOrder[]>(
+        "/InboundOrder/all",
+        {
+          params: {
+            offset,
+            limit: 500,
+            Offset: offset,
+            Limit: 500,
+            pageSize: 500,
+            PageSize: 500,
+            records: 500,
+            Records: 500,
+          },
+          timeout: 60000,
+        }
+      );
       const data = res.data;
-      // API may return a flat array or an object with items/data
-      const items: RazorInboundOrder[] = Array.isArray(data)
-        ? data
-        : data?.items ?? data?.data ?? [];
-      allOrders.push(...items);
-      // If we got fewer than the batch size, we've reached the end
-      if (items.length < batchSize) break;
-      offset += batchSize;
-      // Safety limit: 50 batches = 25,000 orders max
-      if (offset >= batchSize * 50) break;
+
+      let items: RazorInboundOrder[];
+      if (Array.isArray(data)) {
+        items = data;
+      } else if (data && typeof data === "object") {
+        items = data.items ?? [];
+        if (totalCount < 0 && typeof data.totalCount === "number") {
+          totalCount = data.totalCount;
+          console.log(`[RazorAPI] Total orders reported by server: ${totalCount}`);
+        }
+        // Use 'records' as the page count if available
+        if (typeof data.records === "number" && data.records > 0) {
+          pageSize = data.records;
+        }
+      } else {
+        break;
+      }
+
+      // Detect actual page size from first batch
+      if (batchNum === 1 && items.length > 0) {
+        pageSize = items.length;
+        console.log(`[RazorAPI] Server page size detected: ${pageSize}`);
+      }
+
+      // Deduplicate by ID in case of overlapping offsets
+      const existingIds = new Set(allOrders.map((o) => o.id));
+      const newItems = items.filter((o) => !existingIds.has(o.id));
+      allOrders.push(...newItems);
+
+      console.log(`[RazorAPI] Batch #${batchNum}: got ${items.length} items (${newItems.length} new). Total: ${allOrders.length}${totalCount >= 0 ? ` / ${totalCount}` : ""})`);
+
+      // Report progress
+      if (onProgress) {
+        onProgress(allOrders.length, totalCount >= 0 ? totalCount : allOrders.length);
+      }
+
+      // Stop conditions
+      if (items.length === 0) break;
+      if (totalCount >= 0 && allOrders.length >= totalCount) break;
+
+      // Advance offset by the number of items the server actually returned
+      offset += items.length;
+
+      // If the batch was smaller than the detected page size, we've reached the end
+      if (items.length < pageSize) break;
+
+      // Safety cap
+      if (offset >= 50000) break;
+
+      // Small delay to avoid rate limiting
+      await new Promise((r) => setTimeout(r, 100));
     }
   } catch (error: any) {
-    if (allOrders.length > 0) return allOrders;
+    if (allOrders.length > 0) {
+      console.warn(`[RazorAPI] Partial fetch: returning ${allOrders.length} orders after error: ${error?.message}`);
+      return allOrders;
+    }
     console.error("Failed to fetch orders:", error?.message);
     throw error;
   }
+  console.log(`[RazorAPI] Fetch complete: ${allOrders.length} total orders`);
   return allOrders;
+}
+
+// ---- Contact Resolution ----
+
+/**
+ * Fetch a contact by ID from Razor ERP.
+ * GET /api/v1/Contact/{id}
+ */
+export async function fetchContact(contactId: number): Promise<RazorContact | null> {
+  if (!client) return null;
+  try {
+    const res = await client.get(`/Contact/${contactId}`);
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch addresses linked to a contact.
+ * GET /api/v1/Contact/{id}/addresses
+ */
+export async function fetchContactAddresses(contactId: number): Promise<RazorAddress[]> {
+  if (!client) return [];
+  try {
+    const res = await client.get(`/Contact/${contactId}/addresses`);
+    return Array.isArray(res.data) ? res.data : res.data?.items ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch a specific customer address by ID.
+ * GET /api/v1/Customer/{customerId}/address/by-id/{id}
+ */
+export async function fetchCustomerAddress(
+  customerId: number,
+  addressId: number
+): Promise<RazorAddress | null> {
+  if (!client) return null;
+  try {
+    const res = await client.get(`/Customer/${customerId}/address/by-id/${addressId}`);
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Enrich an order with contact details and full address.
+ * Resolves onsiteContactId (preferred) or customerContactId to get name/phone/email.
+ * Resolves customerAddressId to get full street address.
+ */
+export async function enrichOrderWithContactAndAddress(
+  order: RazorInboundOrder
+): Promise<RazorInboundOrder> {
+  const enriched = { ...order };
+
+  // Resolve contact
+  const contactId = order.onsiteContactId || order.customerContactId;
+  if (contactId && !order.contactName) {
+    const contact = await fetchContact(contactId);
+    if (contact) {
+      const nameParts = [contact.firstName, contact.lastName].filter(Boolean);
+      enriched.contactName = nameParts.join(" ") || undefined;
+      enriched.contactPhone =
+        contact.mainPhoneNumber ||
+        contact.mobilePhoneNumber ||
+        contact.businessPhoneNumber ||
+        undefined;
+      enriched.contactEmail = contact.mainEmail || undefined;
+    }
+  }
+
+  // Resolve full address if we have customerAddressId but no full address string
+  if (order.customerAddressId && order.customerId && !order.locationAddress) {
+    const addr = await fetchCustomerAddress(order.customerId, order.customerAddressId);
+    if (addr) {
+      const parts = [addr.street1, addr.street2, addr.city, addr.stateName, addr.postalCode]
+        .filter(Boolean);
+      enriched.locationAddress = parts.join(", ");
+      enriched.locationCity = addr.city;
+      enriched.locationState = addr.stateName;
+      enriched.locationZip = addr.postalCode;
+    }
+  }
+
+  return enriched;
 }
 
 /**

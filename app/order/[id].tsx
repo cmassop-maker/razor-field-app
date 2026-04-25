@@ -31,9 +31,18 @@ function AssetRow({
   return (
     <View style={[styles.assetRow, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <View style={{ flex: 1 }}>
-        <Text style={[styles.assetMake, { color: colors.foreground }]}>
-          {asset.make} {asset.model}
-        </Text>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 2 }}>
+          {asset.assetType ? (
+            <View style={[styles.assetTypeBadge, { backgroundColor: colors.primary + "18" }]}>
+              <Text style={{ fontSize: 10, fontWeight: "700", color: colors.primary }}>
+                {asset.assetType.toUpperCase()}
+              </Text>
+            </View>
+          ) : null}
+          <Text style={[styles.assetMake, { color: colors.foreground, flex: 1 }]} numberOfLines={1}>
+            {asset.make} {asset.model}
+          </Text>
+        </View>
         <Text style={[styles.assetSerial, { color: colors.muted }]}>
           S/N: {asset.serialNumber}
         </Text>
@@ -118,8 +127,17 @@ export default function OrderDetailScreen() {
   const fullAddress = useMemo(() => {
     if (!order) return "";
     const ro = order.razorOrder;
-    const parts = [ro.locationAddress, ro.locationCity, ro.locationState, ro.locationZip].filter(Boolean);
-    return parts.join(", ");
+    // Prefer resolved locationAddress, fall back to customerAddress from API
+    if (ro.locationAddress) {
+      return ro.locationAddress;
+    }
+    if (ro.customerAddress) {
+      return ro.customerAddress;
+    }
+    const parts = [ro.locationCity, ro.locationState, ro.locationZip].filter(Boolean);
+    if (parts.length > 0) return parts.join(", ");
+    if (ro.customerLocationName) return ro.customerLocationName;
+    return "";
   }, [order]);
 
   // Geocode the address
@@ -440,6 +458,11 @@ const styles = StyleSheet.create({
   assetMake: {
     fontSize: 15,
     fontWeight: "600",
+  },
+  assetTypeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
   },
   assetSerial: {
     fontSize: 13,

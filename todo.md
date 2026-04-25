@@ -44,3 +44,10 @@
 - [x] Add "Generate Report" button to order detail and summary screens
 - [x] Add share/export functionality for the generated PDF
 - [x] Add order status filter tabs (All, Pending, In Progress, Completed) to Orders screen
+- [x] Fix 25-order limit - added multiple pagination param strategies and proper loop
+- [x] Add point of contact to order cards on Orders list screen
+- [x] Add address to order cards on Orders list screen
+- [x] Add sort toggle (ascending/descending) for order numbers on Orders screen
+- [x] Add asset type selector (laptop, desktop, cell phone, tablet, server, etc.) to Capture Asset screen
+- [x] Build make/model auto-complete database that learns from previous entries (AsyncStorage)
+- [x] Add continuous scanning mode for rapid serial number capture with batch queue processing

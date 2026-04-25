@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Text,
   View,
@@ -8,6 +8,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  FlatList,
+  StyleSheet,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
@@ -17,24 +19,70 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
 import { v4 as uuidv4 } from "uuid";
-import type { AssetCondition, CapturedAsset } from "@/lib/types";
+import type { AssetCondition, AssetType, CapturedAsset } from "@/lib/types";
+import {
+  recordMakeModel,
+  suggestMakes,
+  suggestModels,
+} from "@/lib/autocomplete-db";
 
 const CONDITIONS: AssetCondition[] = ["Excellent", "Good", "Fair", "Poor"];
 
+const ASSET_TYPES: AssetType[] = [
+  "Laptop",
+  "Desktop",
+  "Cell Phone",
+  "Tablet",
+  "Server",
+  "Monitor",
+  "Printer",
+  "Networking",
+  "UPS/Battery",
+  "Other",
+];
+
+const ASSET_TYPE_ICONS: Record<AssetType, string> = {
+  Laptop: "laptop",
+  Desktop: "desktop-windows",
+  "Cell Phone": "smartphone",
+  Tablet: "tablet",
+  Server: "dns",
+  Monitor: "monitor",
+  Printer: "print",
+  Networking: "router",
+  "UPS/Battery": "battery-charging-full",
+  Other: "devices-other",
+};
+
 export default function AssetCaptureScreen() {
-  const { orderId, scannedSerial } = useLocalSearchParams<{
+  const { orderId, scannedSerial, scannedSerials } = useLocalSearchParams<{
     orderId: string;
     scannedSerial?: string;
+    scannedSerials?: string;
   }>();
   const { dispatch } = useStore();
   const colors = useColors();
 
+  const [assetType, setAssetType] = useState<AssetType>("Laptop");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
   const [serialNumber, setSerialNumber] = useState(scannedSerial || "");
+
+  // Queue of serials from continuous scanning
+  const [serialQueue, setSerialQueue] = useState<string[]>([]);
+  const [queueIndex, setQueueIndex] = useState(0);
   const [condition, setCondition] = useState<AssetCondition>("Good");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+  const [savedCount, setSavedCount] = useState(0);
+
+  // Auto-complete state
+  const [makeSuggestions, setMakeSuggestions] = useState<string[]>([]);
+  const [modelSuggestions, setModelSuggestions] = useState<
+    { model: string; assetType?: AssetType; count: number }[]
+  >([]);
+  const [showMakeSuggestions, setShowMakeSuggestions] = useState(false);
+  const [showModelSuggestions, setShowModelSuggestions] = useState(false);
 
   // GPS location state
   const [gpsLatitude, setGpsLatitude] = useState<number | null>(null);
@@ -43,6 +91,28 @@ export default function AssetCaptureScreen() {
   const [gpsLoading, setGpsLoading] = useState(true);
   const [gpsError, setGpsError] = useState("");
   const [captureTimestamp] = useState(() => new Date().toISOString());
+
+  // Continuous scan mode
+  const [continuousScan, setContinuousScan] = useState(false);
+
+  // Process batch scanned serials from continuous scanner
+  useEffect(() => {
+    if (scannedSerials) {
+      try {
+        const parsed = JSON.parse(scannedSerials) as string[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setSerialQueue(parsed);
+          setSerialNumber(parsed[0]);
+          setQueueIndex(0);
+          setContinuousScan(true);
+        }
+      } catch {
+        // Invalid JSON, ignore
+      }
+    }
+  }, [scannedSerials]);
+
+  const serialInputRef = useRef<TextInput>(null);
 
   // Capture GPS location when screen opens
   useEffect(() => {
@@ -60,7 +130,6 @@ export default function AssetCaptureScreen() {
         setGpsLatitude(loc.coords.latitude);
         setGpsLongitude(loc.coords.longitude);
 
-        // Reverse geocode to get address
         try {
           const addresses = await Location.reverseGeocodeAsync({
             latitude: loc.coords.latitude,
@@ -78,7 +147,7 @@ export default function AssetCaptureScreen() {
             setGpsAddress(parts.join(", ") || null);
           }
         } catch {
-          // Reverse geocode is optional — coordinates are still captured
+          // Reverse geocode is optional
         }
       } catch {
         setGpsError("Could not get location");
@@ -88,14 +157,43 @@ export default function AssetCaptureScreen() {
     })();
   }, []);
 
+  // Load make suggestions when make input changes
+  useEffect(() => {
+    let cancelled = false;
+    suggestMakes(make).then((suggestions) => {
+      if (!cancelled) setMakeSuggestions(suggestions);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [make]);
+
+  // Load model suggestions when make or model input changes
+  useEffect(() => {
+    let cancelled = false;
+    if (make.trim()) {
+      suggestModels(make, model).then((suggestions) => {
+        if (!cancelled) setModelSuggestions(suggestions);
+      });
+    } else {
+      setModelSuggestions([]);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [make, model]);
+
   function handleScan() {
     router.push({
       pathname: "/scanner",
-      params: { orderId, returnTo: "asset-capture" },
+      params: {
+        orderId,
+        continuous: continuousScan ? "true" : "false",
+      },
     });
   }
 
-  function handleSave() {
+  const handleSave = useCallback(() => {
     if (!make.trim()) {
       setError("Make is required");
       return;
@@ -113,12 +211,13 @@ export default function AssetCaptureScreen() {
     const asset: CapturedAsset = {
       localId: uuidv4(),
       orderId: Number(orderId),
+      assetType,
       make: make.trim(),
       model: model.trim(),
       serialNumber: serialNumber.trim(),
       condition,
       notes: notes.trim(),
-      capturedAt: captureTimestamp,
+      capturedAt: new Date().toISOString(),
       syncStatus: "pending",
       captureLatitude: gpsLatitude ?? undefined,
       captureLongitude: gpsLongitude ?? undefined,
@@ -127,11 +226,61 @@ export default function AssetCaptureScreen() {
 
     dispatch({ type: "ADD_ASSET", payload: { orderId: Number(orderId), asset } });
 
+    // Record make/model for auto-complete database
+    recordMakeModel(make.trim(), model.trim(), assetType);
+
     if (Platform.OS !== "web") {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
 
-    router.back();
+    setSavedCount((prev) => prev + 1);
+
+    if (continuousScan) {
+      // In continuous mode, advance to next serial in queue or clear for manual entry
+      setNotes("");
+      if (serialQueue.length > 0 && queueIndex + 1 < serialQueue.length) {
+        const nextIdx = queueIndex + 1;
+        setQueueIndex(nextIdx);
+        setSerialNumber(serialQueue[nextIdx]);
+      } else {
+        setSerialNumber("");
+        // Focus the serial number input for quick next entry
+        setTimeout(() => serialInputRef.current?.focus(), 100);
+      }
+    } else {
+      router.back();
+    }
+  }, [
+    make,
+    model,
+    serialNumber,
+    assetType,
+    condition,
+    notes,
+    orderId,
+    gpsLatitude,
+    gpsLongitude,
+    gpsAddress,
+    continuousScan,
+    serialQueue,
+    queueIndex,
+    dispatch,
+  ]);
+
+  function selectMakeSuggestion(suggestion: string) {
+    setMake(suggestion);
+    setShowMakeSuggestions(false);
+  }
+
+  function selectModelSuggestion(suggestion: {
+    model: string;
+    assetType?: AssetType;
+  }) {
+    setModel(suggestion.model);
+    if (suggestion.assetType) {
+      setAssetType(suggestion.assetType);
+    }
+    setShowModelSuggestions(false);
   }
 
   function formatTimestamp(iso: string): string {
@@ -153,10 +302,27 @@ export default function AssetCaptureScreen() {
         className="flex-row items-center px-4 py-3 border-b"
         style={{ borderBottomColor: colors.border }}
       >
-        <TouchableOpacity onPress={() => router.back()} style={{ padding: 4, marginRight: 12 }}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={{ padding: 4, marginRight: 12 }}
+        >
           <MaterialIcons name="arrow-back" size={24} color={colors.foreground} />
         </TouchableOpacity>
-        <Text className="text-lg font-bold text-foreground flex-1">Capture Asset</Text>
+        <Text className="text-lg font-bold text-foreground flex-1">
+          Capture Asset
+        </Text>
+        {savedCount > 0 && (
+          <View
+            style={[
+              styles.savedBadge,
+              { backgroundColor: colors.success },
+            ]}
+          >
+            <Text style={styles.savedBadgeText}>
+              {savedCount} saved
+            </Text>
+          </View>
+        )}
       </View>
 
       <KeyboardAvoidingView
@@ -171,7 +337,10 @@ export default function AssetCaptureScreen() {
           {/* GPS Location & Timestamp Banner */}
           <View
             className="rounded-xl p-3 mb-4 border"
-            style={{ backgroundColor: colors.surface, borderColor: colors.border }}
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            }}
           >
             <View className="flex-row items-center mb-2">
               <MaterialIcons name="gps-fixed" size={16} color={colors.primary} />
@@ -180,7 +349,6 @@ export default function AssetCaptureScreen() {
               </Text>
             </View>
 
-            {/* Timestamp */}
             <View className="flex-row items-center mb-1.5">
               <MaterialIcons name="schedule" size={14} color={colors.muted} />
               <Text className="text-sm text-foreground ml-1.5">
@@ -188,16 +356,21 @@ export default function AssetCaptureScreen() {
               </Text>
             </View>
 
-            {/* GPS Coordinates */}
             {gpsLoading ? (
               <View className="flex-row items-center">
                 <ActivityIndicator size="small" color={colors.primary} />
-                <Text className="text-sm text-muted ml-2">Acquiring GPS location...</Text>
+                <Text className="text-sm text-muted ml-2">
+                  Acquiring GPS location...
+                </Text>
               </View>
             ) : gpsLatitude !== null && gpsLongitude !== null ? (
               <>
                 <View className="flex-row items-center mb-1">
-                  <MaterialIcons name="location-on" size={14} color={colors.success} />
+                  <MaterialIcons
+                    name="location-on"
+                    size={14}
+                    color={colors.success}
+                  />
                   <Text className="text-sm text-foreground ml-1.5">
                     {gpsLatitude.toFixed(6)}, {gpsLongitude.toFixed(6)}
                   </Text>
@@ -212,7 +385,11 @@ export default function AssetCaptureScreen() {
               </>
             ) : (
               <View className="flex-row items-center">
-                <MaterialIcons name="location-off" size={14} color={colors.error} />
+                <MaterialIcons
+                  name="location-off"
+                  size={14}
+                  color={colors.error}
+                />
                 <Text className="text-sm text-error ml-1.5">
                   {gpsError || "Location unavailable"}
                 </Text>
@@ -220,46 +397,206 @@ export default function AssetCaptureScreen() {
             )}
           </View>
 
-          {/* Make */}
+          {/* Asset Type Selector */}
           <View className="mb-4">
-            <Text className="text-sm font-medium text-muted mb-1.5">Make *</Text>
+            <Text className="text-sm font-medium text-muted mb-2">
+              Asset Type *
+            </Text>
+            <View style={styles.assetTypeGrid}>
+              {ASSET_TYPES.map((type) => {
+                const isSelected = assetType === type;
+                return (
+                  <TouchableOpacity
+                    key={type}
+                    style={[
+                      styles.assetTypeItem,
+                      {
+                        backgroundColor: isSelected
+                          ? colors.primary
+                          : colors.surface,
+                        borderColor: isSelected
+                          ? colors.primary
+                          : colors.border,
+                      },
+                    ]}
+                    onPress={() => setAssetType(type)}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons
+                      name={ASSET_TYPE_ICONS[type] as any}
+                      size={20}
+                      color={isSelected ? "#FFFFFF" : colors.muted}
+                    />
+                    <Text
+                      style={[
+                        styles.assetTypeText,
+                        {
+                          color: isSelected ? "#FFFFFF" : colors.foreground,
+                        },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {type}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* Make with Auto-complete */}
+          <View className="mb-4" style={{ zIndex: 20 }}>
+            <Text className="text-sm font-medium text-muted mb-1.5">
+              Make *
+            </Text>
             <TextInput
               className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
               value={make}
-              onChangeText={setMake}
+              onChangeText={(text) => {
+                setMake(text);
+                setShowMakeSuggestions(true);
+              }}
+              onFocus={() => setShowMakeSuggestions(true)}
+              onBlur={() =>
+                setTimeout(() => setShowMakeSuggestions(false), 200)
+              }
               placeholder="e.g. Dell, HP, Lenovo"
               placeholderTextColor={colors.muted}
               autoCapitalize="words"
               returnKeyType="next"
             />
+            {showMakeSuggestions && makeSuggestions.length > 0 && (
+              <View
+                style={[
+                  styles.suggestionsDropdown,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                {makeSuggestions.slice(0, 6).map((s) => (
+                  <TouchableOpacity
+                    key={s}
+                    style={[
+                      styles.suggestionItem,
+                      { borderBottomColor: colors.border },
+                    ]}
+                    onPress={() => selectMakeSuggestion(s)}
+                  >
+                    <MaterialIcons
+                      name="history"
+                      size={16}
+                      color={colors.muted}
+                    />
+                    <Text
+                      style={[
+                        styles.suggestionText,
+                        { color: colors.foreground },
+                      ]}
+                    >
+                      {s}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
-          {/* Model */}
-          <View className="mb-4">
-            <Text className="text-sm font-medium text-muted mb-1.5">Model *</Text>
+          {/* Model with Auto-complete */}
+          <View className="mb-4" style={{ zIndex: 10 }}>
+            <Text className="text-sm font-medium text-muted mb-1.5">
+              Model *
+            </Text>
             <TextInput
               className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
               value={model}
-              onChangeText={setModel}
+              onChangeText={(text) => {
+                setModel(text);
+                setShowModelSuggestions(true);
+              }}
+              onFocus={() => setShowModelSuggestions(true)}
+              onBlur={() =>
+                setTimeout(() => setShowModelSuggestions(false), 200)
+              }
               placeholder="e.g. OptiPlex 7090, EliteBook 840"
               placeholderTextColor={colors.muted}
               autoCapitalize="words"
               returnKeyType="next"
             />
+            {showModelSuggestions && modelSuggestions.length > 0 && (
+              <View
+                style={[
+                  styles.suggestionsDropdown,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                {modelSuggestions.slice(0, 6).map((s) => (
+                  <TouchableOpacity
+                    key={s.model}
+                    style={[
+                      styles.suggestionItem,
+                      { borderBottomColor: colors.border },
+                    ]}
+                    onPress={() => selectModelSuggestion(s)}
+                  >
+                    <MaterialIcons
+                      name="history"
+                      size={16}
+                      color={colors.muted}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.suggestionText,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        {s.model}
+                      </Text>
+                      {s.assetType && (
+                        <Text
+                          style={{
+                            fontSize: 11,
+                            color: colors.muted,
+                          }}
+                        >
+                          {s.assetType} • used {s.count}x
+                        </Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Serial Number with Scan Button */}
           <View className="mb-4">
-            <Text className="text-sm font-medium text-muted mb-1.5">Serial Number *</Text>
+            <View className="flex-row items-center justify-between mb-1.5">
+              <Text className="text-sm font-medium text-muted">
+                Serial Number *
+              </Text>
+              {serialQueue.length > 0 && (
+                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: "600" }}>
+                  {queueIndex + 1} of {serialQueue.length} scanned
+                </Text>
+              )}
+            </View>
             <View className="flex-row items-center gap-2">
               <TextInput
+                ref={serialInputRef}
                 className="flex-1 bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
                 value={serialNumber}
                 onChangeText={setSerialNumber}
                 placeholder="Enter or scan serial number"
                 placeholderTextColor={colors.muted}
                 autoCapitalize="characters"
-                returnKeyType="next"
+                returnKeyType="done"
+                onSubmitEditing={handleSave}
               />
               <TouchableOpacity
                 className="rounded-xl items-center justify-center"
@@ -271,14 +608,59 @@ export default function AssetCaptureScreen() {
                 onPress={handleScan}
                 activeOpacity={0.8}
               >
-                <MaterialIcons name="qr-code-scanner" size={24} color="#FFFFFF" />
+                <MaterialIcons
+                  name="qr-code-scanner"
+                  size={24}
+                  color="#FFFFFF"
+                />
               </TouchableOpacity>
             </View>
           </View>
 
+          {/* Continuous Scan Toggle */}
+          <TouchableOpacity
+            style={[
+              styles.continuousToggle,
+              {
+                backgroundColor: continuousScan
+                  ? colors.primary + "15"
+                  : colors.surface,
+                borderColor: continuousScan ? colors.primary : colors.border,
+              },
+            ]}
+            onPress={() => setContinuousScan(!continuousScan)}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons
+              name={continuousScan ? "check-box" : "check-box-outline-blank"}
+              size={22}
+              color={continuousScan ? colors.primary : colors.muted}
+            />
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text
+                style={[
+                  styles.continuousTitle,
+                  {
+                    color: continuousScan
+                      ? colors.primary
+                      : colors.foreground,
+                  },
+                ]}
+              >
+                Continuous Capture Mode
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.muted }}>
+                After saving, stay on this screen to quickly add more assets
+                with the same make/model
+              </Text>
+            </View>
+          </TouchableOpacity>
+
           {/* Condition */}
-          <View className="mb-4">
-            <Text className="text-sm font-medium text-muted mb-1.5">Condition</Text>
+          <View className="mb-4 mt-4">
+            <Text className="text-sm font-medium text-muted mb-1.5">
+              Condition
+            </Text>
             <View className="flex-row gap-2">
               {CONDITIONS.map((c) => {
                 const isSelected = condition === c;
@@ -287,15 +669,21 @@ export default function AssetCaptureScreen() {
                     key={c}
                     className="flex-1 py-3 rounded-xl items-center border"
                     style={{
-                      backgroundColor: isSelected ? colors.primary : colors.surface,
-                      borderColor: isSelected ? colors.primary : colors.border,
+                      backgroundColor: isSelected
+                        ? colors.primary
+                        : colors.surface,
+                      borderColor: isSelected
+                        ? colors.primary
+                        : colors.border,
                     }}
                     onPress={() => setCondition(c)}
                     activeOpacity={0.7}
                   >
                     <Text
                       className="text-sm font-medium"
-                      style={{ color: isSelected ? "#FFFFFF" : colors.foreground }}
+                      style={{
+                        color: isSelected ? "#FFFFFF" : colors.foreground,
+                      }}
                     >
                       {c}
                     </Text>
@@ -307,7 +695,9 @@ export default function AssetCaptureScreen() {
 
           {/* Notes */}
           <View className="mb-6">
-            <Text className="text-sm font-medium text-muted mb-1.5">Notes (optional)</Text>
+            <Text className="text-sm font-medium text-muted mb-1.5">
+              Notes (optional)
+            </Text>
             <TextInput
               className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
               value={notes}
@@ -336,11 +726,104 @@ export default function AssetCaptureScreen() {
           >
             <View className="flex-row items-center gap-2">
               <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
-              <Text className="text-white font-semibold text-base">Save Asset</Text>
+              <Text className="text-white font-semibold text-base">
+                {continuousScan ? "Save & Next" : "Save Asset"}
+              </Text>
             </View>
           </TouchableOpacity>
+
+          {continuousScan && savedCount > 0 && (
+            <TouchableOpacity
+              className="rounded-xl py-3 items-center mt-3 border"
+              style={{ borderColor: colors.border }}
+              onPress={() => router.back()}
+              activeOpacity={0.8}
+            >
+              <Text
+                className="font-semibold text-base"
+                style={{ color: colors.foreground }}
+              >
+                Done — Return to Order
+              </Text>
+            </TouchableOpacity>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );
 }
+
+const styles = StyleSheet.create({
+  assetTypeGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
+  assetTypeItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 6,
+    minWidth: "30%",
+    flexGrow: 1,
+    flexBasis: "28%",
+  },
+  assetTypeText: {
+    fontSize: 13,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
+  suggestionsDropdown: {
+    position: "absolute",
+    top: "100%",
+    left: 0,
+    right: 0,
+    borderWidth: 1,
+    borderRadius: 12,
+    marginTop: 4,
+    maxHeight: 200,
+    overflow: "hidden",
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+  },
+  suggestionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    gap: 10,
+  },
+  suggestionText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  continuousToggle: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  continuousTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  savedBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  savedBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+});

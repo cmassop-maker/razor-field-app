@@ -20,8 +20,8 @@ function buildReportHtml(order: LocalOrder): string {
     minute: "2-digit",
   });
 
-  const pickupDate = ro.pickupDate
-    ? new Date(ro.pickupDate).toLocaleDateString(undefined, {
+  const pickupDate = (ro.pickupStartDate || ro.pickupEndDate)
+    ? new Date((ro.pickupStartDate || ro.pickupEndDate)!).toLocaleDateString(undefined, {
         year: "numeric",
         month: "long",
         day: "numeric",
@@ -50,6 +50,7 @@ function buildReportHtml(order: LocalOrder): string {
       return `
         <tr>
           <td style="text-align:center;">${index + 1}</td>
+          <td>${escapeHtml(asset.assetType || "Other")}</td>
           <td>${escapeHtml(asset.make)}</td>
           <td>${escapeHtml(asset.model)}</td>
           <td style="font-family:monospace;font-size:11px;">${escapeHtml(asset.serialNumber)}</td>
@@ -308,7 +309,7 @@ function buildReportHtml(order: LocalOrder): string {
       </div>
       <div class="info-item">
         <div class="label">Status</div>
-        <div class="value">${escapeHtml(ro.status || order.localStatus)}</div>
+        <div class="value">${escapeHtml(ro.statusName || order.localStatus)}</div>
       </div>
       ${fullAddress ? `
       <div class="info-item" style="grid-column: span 2;">
@@ -346,6 +347,7 @@ function buildReportHtml(order: LocalOrder): string {
       <thead>
         <tr>
           <th style="width:30px;">#</th>
+          <th>Type</th>
           <th>Make</th>
           <th>Model</th>
           <th>Serial Number</th>

@@ -5,13 +5,26 @@
 /** Condition grades for captured assets */
 export type AssetCondition = "Excellent" | "Good" | "Fair" | "Poor";
 
+/** Asset type categories for electronics recycling */
+export type AssetType =
+  | "Laptop"
+  | "Desktop"
+  | "Cell Phone"
+  | "Tablet"
+  | "Server"
+  | "Monitor"
+  | "Printer"
+  | "Networking"
+  | "UPS/Battery"
+  | "Other";
+
 /** Status of an inbound order from the driver's perspective */
 export type OrderStatus = "Pending" | "In Progress" | "Completed";
 
 /** Sync status for offline queue items */
 export type SyncStatus = "pending" | "syncing" | "synced" | "failed";
 
-// ---- Razor ERP API models (subset relevant to driver app) ----
+// ---- Razor ERP API models (matches InboundOrderGetDto from Swagger) ----
 
 export interface RazorCustomer {
   id: number;
@@ -25,16 +38,104 @@ export interface RazorInboundOrder {
   autoName: string;
   customerId: number;
   customerName?: string;
-  status?: string;
-  notes?: string;
-  pickupDate?: string;
+  statusId?: number;
+  statusName?: string;
+
+  // Pickup dates (actual API field names)
+  pickupStartDate?: string;
+  pickupEndDate?: string;
+  pickupStartDateTime?: string;
+  pickupEndDateTime?: string;
+  pickupTimeWindowFrom?: string;
+  pickupTimeWindowTo?: string;
+
+  // Other dates
+  receiveStartDate?: string;
+  receiveEndDate?: string;
+  createdDate?: string;
+  updatedDate?: string;
+  deliveryDate?: string;
+  settledDate?: string;
+  slaDate?: string;
+
+  // Address fields from the API
+  customerAddress?: string; // Full address string from API
+  customerLocationName?: string;
+  customerAddressId?: number;
+
+  // Resolved location fields (enriched locally)
   locationAddress?: string;
   locationCity?: string;
   locationState?: string;
   locationZip?: string;
+
+  // Contact fields from the API
+  onsiteContactId?: number;
+  customerContactId?: number;
+  // Resolved contact fields (enriched locally)
   contactName?: string;
   contactPhone?: string;
   contactEmail?: string;
+
+  // Notes
+  notes?: string;
+  onsiteNotes?: string;
+  receivingNotes?: string;
+  internalComments?: string;
+  workInstructions?: string;
+
+  // Additional useful fields
+  serviceTypeId?: number;
+  serviceTypeName?: string;
+  repUserId?: number;
+  repUserName?: string;
+  repUserEmail?: string;
+  priorityId?: number;
+  priorityName?: string;
+  warehouseId?: number;
+  warehouseName?: string;
+  totalEstimatedWeight?: number;
+  itemCount?: number;
+  palletCount?: number;
+  poNumber?: string;
+  bolNumber?: string;
+  employee?: string;
+  logisticTypeName?: string;
+  destructionTypeName?: string;
+  distance?: number;
+
+  // References
+  reference1?: string;
+  reference2?: string;
+  reference3?: string;
+}
+
+/** Contact details resolved from Razor ERP Contact API */
+export interface RazorContact {
+  id: number;
+  firstName?: string;
+  lastName?: string;
+  mainEmail?: string;
+  mainPhoneNumber?: string;
+  businessPhoneNumber?: string;
+  mobilePhoneNumber?: string;
+  jobTitle?: string;
+  customerName?: string;
+}
+
+/** Address details from Razor ERP Customer Address API */
+export interface RazorAddress {
+  id: number;
+  name?: string;
+  street1?: string;
+  street2?: string;
+  street3?: string;
+  city?: string;
+  stateName?: string;
+  postalCode?: string;
+  countryCode?: string;
+  phone?: string;
+  companyName?: string;
 }
 
 // ---- Local app models ----
@@ -43,6 +144,7 @@ export interface CapturedAsset {
   localId: string; // UUID generated locally
   razorAssetId?: number; // Set after synced to Razor ERP
   orderId: number; // Links to the inbound order
+  assetType: AssetType; // Category of the asset
   make: string;
   model: string;
   serialNumber: string;

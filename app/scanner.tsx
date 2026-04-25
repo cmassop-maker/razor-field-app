@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import {
   Text,
   View,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TextInput,
   Platform,
+  FlatList,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useColors } from "@/hooks/use-colors";
@@ -24,26 +25,59 @@ try {
 }
 
 export default function ScannerScreen() {
-  const { orderId } = useLocalSearchParams<{ orderId: string }>();
+  const { orderId, continuous: continuousParam } = useLocalSearchParams<{
+    orderId: string;
+    continuous?: string;
+  }>();
+  const isContinuous = continuousParam === "true";
   const colors = useColors();
   const [scanned, setScanned] = useState(false);
   const [scannedValue, setScannedValue] = useState("");
-  const [manualEntry, setManualEntry] = useState(false);
   const [manualValue, setManualValue] = useState("");
+  const [scannedList, setScannedList] = useState<string[]>([]);
+  const lastScannedRef = useRef<string>("");
+  const scanCooldownRef = useRef(false);
 
   // Camera permissions
   const [permission, requestPermission] = useCameraPermissions
     ? useCameraPermissions()
     : [null, () => {}];
 
-  function handleBarcodeScanned({ type, data }: { type: string; data: string }) {
-    if (scanned) return;
-    setScanned(true);
-    setScannedValue(data);
-    if (Platform.OS !== "web") {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }
-  }
+  const handleBarcodeScanned = useCallback(
+    ({ data }: { type: string; data: string }) => {
+      const trimmed = data.trim();
+      if (!trimmed) return;
+
+      if (isContinuous) {
+        // In continuous mode, auto-add unique serials with a cooldown
+        if (scanCooldownRef.current) return;
+        if (trimmed === lastScannedRef.current) return;
+        if (scannedList.includes(trimmed)) return;
+
+        scanCooldownRef.current = true;
+        lastScannedRef.current = trimmed;
+        setScannedList((prev) => [...prev, trimmed]);
+
+        if (Platform.OS !== "web") {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+
+        // Cooldown to avoid rapid duplicate scans
+        setTimeout(() => {
+          scanCooldownRef.current = false;
+        }, 1500);
+      } else {
+        // Single scan mode
+        if (scanned) return;
+        setScanned(true);
+        setScannedValue(trimmed);
+        if (Platform.OS !== "web") {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+      }
+    },
+    [isContinuous, scanned, scannedList]
+  );
 
   function handleUseValue(value: string) {
     router.replace({
@@ -52,9 +86,28 @@ export default function ScannerScreen() {
     });
   }
 
+  function handleUseContinuousValues() {
+    // Return the list of scanned serials as a JSON array
+    router.replace({
+      pathname: "/asset-capture",
+      params: {
+        orderId,
+        scannedSerials: JSON.stringify(scannedList),
+      },
+    });
+  }
+
   function handleScanAgain() {
     setScanned(false);
     setScannedValue("");
+    lastScannedRef.current = "";
+  }
+
+  function removeFromList(serial: string) {
+    setScannedList((prev) => prev.filter((s) => s !== serial));
+    if (lastScannedRef.current === serial) {
+      lastScannedRef.current = "";
+    }
   }
 
   // Web fallback or no camera
@@ -65,13 +118,16 @@ export default function ScannerScreen() {
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
             <MaterialIcons name="close" size={28} color={colors.foreground} />
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.foreground }]}>Enter Serial Number</Text>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            Enter Serial Number
+          </Text>
           <View style={{ width: 36 }} />
         </View>
         <View style={styles.manualContainer}>
           <MaterialIcons name="document-scanner" size={64} color={colors.border} />
           <Text style={[styles.manualText, { color: colors.muted }]}>
-            Camera scanning is available on mobile devices.{"\n"}Enter the serial number manually below.
+            Camera scanning is available on mobile devices.{"\n"}Enter the serial
+            number manually below.
           </Text>
           <TextInput
             style={[
@@ -94,7 +150,13 @@ export default function ScannerScreen() {
             }}
           />
           <TouchableOpacity
-            style={[styles.useButton, { backgroundColor: colors.primary, opacity: manualValue.trim() ? 1 : 0.5 }]}
+            style={[
+              styles.useButton,
+              {
+                backgroundColor: colors.primary,
+                opacity: manualValue.trim() ? 1 : 0.5,
+              },
+            ]}
             onPress={() => handleUseValue(manualValue)}
             disabled={!manualValue.trim()}
             activeOpacity={0.8}
@@ -127,7 +189,7 @@ export default function ScannerScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={{ marginTop: 16 }}
-            onPress={() => setManualEntry(true)}
+            onPress={() => router.back()}
           >
             <Text style={{ color: "#FFFFFF", textDecorationLine: "underline" }}>
               Enter manually instead
@@ -138,8 +200,8 @@ export default function ScannerScreen() {
     );
   }
 
-  // Scanned result overlay
-  if (scanned && scannedValue) {
+  // Single scan: result overlay
+  if (!isContinuous && scanned && scannedValue) {
     return (
       <View style={[styles.container, { backgroundColor: "#000" }]}>
         <View style={styles.resultContainer}>
@@ -147,20 +209,25 @@ export default function ScannerScreen() {
           <Text style={styles.resultLabel}>Scanned Value</Text>
           <Text style={styles.resultValue}>{scannedValue}</Text>
           <TouchableOpacity
-            style={[styles.useButton, { backgroundColor: colors.primary, marginTop: 24 }]}
+            style={[
+              styles.useButton,
+              { backgroundColor: colors.primary, marginTop: 24 },
+            ]}
             onPress={() => handleUseValue(scannedValue)}
           >
             <Text style={styles.useButtonText}>Use This Serial Number</Text>
           </TouchableOpacity>
           <TouchableOpacity style={{ marginTop: 16 }} onPress={handleScanAgain}>
-            <Text style={{ color: "#FFFFFF", textDecorationLine: "underline" }}>Scan Again</Text>
+            <Text style={{ color: "#FFFFFF", textDecorationLine: "underline" }}>
+              Scan Again
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
     );
   }
 
-  // Camera viewfinder
+  // Camera viewfinder (both single and continuous modes)
   return (
     <View style={[styles.container, { backgroundColor: "#000" }]}>
       <CameraView
@@ -182,7 +249,9 @@ export default function ScannerScreen() {
             "pdf417",
           ],
         }}
-        onBarcodeScanned={scanned ? undefined : handleBarcodeScanned}
+        onBarcodeScanned={
+          !isContinuous && scanned ? undefined : handleBarcodeScanned
+        }
       />
 
       {/* Overlay */}
@@ -192,7 +261,9 @@ export default function ScannerScreen() {
           <TouchableOpacity onPress={() => router.back()} style={{ padding: 4 }}>
             <MaterialIcons name="close" size={28} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.scanTitle}>Scan Serial / Barcode</Text>
+          <Text style={styles.scanTitle}>
+            {isContinuous ? "Continuous Scan" : "Scan Serial / Barcode"}
+          </Text>
           <View style={{ width: 36 }} />
         </View>
 
@@ -204,26 +275,97 @@ export default function ScannerScreen() {
           <View style={styles.cornerBR} />
         </View>
 
-        <Text style={styles.scanHint}>
-          Point the camera at a barcode or serial number
-        </Text>
+        {isContinuous ? (
+          <View style={styles.continuousBottom}>
+            <Text style={styles.scanHint}>
+              Keep scanning — each barcode is added automatically
+            </Text>
 
-        {/* Manual entry fallback */}
-        <TouchableOpacity
-          style={[styles.manualButton, { borderColor: "#FFFFFF" }]}
-          onPress={() => {
-            setManualEntry(true);
-            router.replace({
-              pathname: "/asset-capture",
-              params: { orderId },
-            });
-          }}
-        >
-          <MaterialIcons name="keyboard" size={18} color="#FFFFFF" />
-          <Text style={{ color: "#FFFFFF", fontWeight: "600", marginLeft: 8 }}>
-            Enter Manually
-          </Text>
-        </TouchableOpacity>
+            {/* Scanned items list */}
+            {scannedList.length > 0 && (
+              <View
+                style={[
+                  styles.scannedListContainer,
+                  { backgroundColor: "rgba(0,0,0,0.75)" },
+                ]}
+              >
+                <Text style={styles.scannedListTitle}>
+                  Scanned ({scannedList.length})
+                </Text>
+                <FlatList
+                  data={scannedList}
+                  keyExtractor={(item, idx) => `${item}-${idx}`}
+                  style={{ maxHeight: 120 }}
+                  renderItem={({ item }) => (
+                    <View style={styles.scannedListItem}>
+                      <MaterialIcons
+                        name="check-circle"
+                        size={16}
+                        color={colors.success}
+                      />
+                      <Text style={styles.scannedListText}>{item}</Text>
+                      <TouchableOpacity
+                        onPress={() => removeFromList(item)}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
+                        <MaterialIcons
+                          name="close"
+                          size={18}
+                          color="#EF4444"
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  )}
+                />
+              </View>
+            )}
+
+            {/* Done button */}
+            <TouchableOpacity
+              style={[
+                styles.useButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: scannedList.length > 0 ? 1 : 0.5,
+                },
+              ]}
+              onPress={handleUseContinuousValues}
+              disabled={scannedList.length === 0}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.useButtonText}>
+                Done — Use {scannedList.length} Serial
+                {scannedList.length !== 1 ? "s" : ""}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={{ alignItems: "center", gap: 16, paddingBottom: 20 }}>
+            <Text style={styles.scanHint}>
+              Point the camera at a barcode or serial number
+            </Text>
+            <TouchableOpacity
+              style={[styles.manualButton, { borderColor: "#FFFFFF" }]}
+              onPress={() => {
+                router.replace({
+                  pathname: "/asset-capture",
+                  params: { orderId },
+                });
+              }}
+            >
+              <MaterialIcons name="keyboard" size={18} color="#FFFFFF" />
+              <Text
+                style={{
+                  color: "#FFFFFF",
+                  fontWeight: "600",
+                  marginLeft: 8,
+                }}
+              >
+                Enter Manually
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -314,7 +456,7 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     justifyContent: "space-between",
     alignItems: "center",
-    paddingBottom: 60,
+    paddingBottom: 20,
   },
   scanHeader: {
     flexDirection: "row",
@@ -347,6 +489,35 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 20,
     paddingVertical: 12,
+  },
+  continuousBottom: {
+    width: "100%",
+    paddingHorizontal: 20,
+    gap: 12,
+    alignItems: "center",
+  },
+  scannedListContainer: {
+    width: "100%",
+    borderRadius: 12,
+    padding: 12,
+  },
+  scannedListTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 8,
+  },
+  scannedListItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 6,
+  },
+  scannedListText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    flex: 1,
   },
   cornerTL: {
     position: "absolute",
