@@ -84,6 +84,7 @@ export default function RootLayout() {
               <Stack.Screen name="login" options={{ presentation: "fullScreenModal" }} />
               <Stack.Screen name="order/[id]" />
               <Stack.Screen name="asset-capture" />
+              <Stack.Screen name="edit-asset" />
               <Stack.Screen name="scanner" options={{ presentation: "fullScreenModal" }} />
               <Stack.Screen name="signature" options={{ presentation: "fullScreenModal" }} />
               <Stack.Screen name="order-summary" />

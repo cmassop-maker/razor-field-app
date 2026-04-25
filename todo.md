@@ -64,3 +64,4 @@
 - [x] Assign Razor UID to each scanned asset via Razor ERP API
 - [x] Sync captured assets back to the Razor order via API
 - [x] Show sync status and Razor UID on captured assets in UI
+- [x] Add edit button on captured assets to allow corrections (make, model, serial, condition, notes, asset type)

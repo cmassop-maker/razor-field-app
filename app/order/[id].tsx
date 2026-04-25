@@ -23,9 +23,11 @@ import { generateAndShareReport, printReport } from "@/lib/generate-report";
 function AssetRow({
   asset,
   onDelete,
+  onEdit,
 }: {
   asset: CapturedAsset;
   onDelete: () => void;
+  onEdit: () => void;
 }) {
   const colors = useColors();
   return (
@@ -117,9 +119,14 @@ function AssetRow({
           ) : null}
         </View>
       </View>
-      <TouchableOpacity onPress={onDelete} style={{ padding: 8 }}>
-        <MaterialIcons name="delete-outline" size={20} color={colors.error} />
-      </TouchableOpacity>
+      <View style={{ gap: 8, alignItems: "center" }}>
+        <TouchableOpacity onPress={onEdit} style={{ padding: 8 }}>
+          <MaterialIcons name="edit" size={20} color={colors.primary} />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={onDelete} style={{ padding: 8 }}>
+          <MaterialIcons name="delete-outline" size={20} color={colors.error} />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -407,7 +414,16 @@ export default function OrderDetailScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <AssetRow asset={item} onDelete={() => handleDeleteAsset(item.localId)} />
+          <AssetRow
+            asset={item}
+            onDelete={() => handleDeleteAsset(item.localId)}
+            onEdit={() =>
+              router.push({
+                pathname: "/edit-asset",
+                params: { orderId: String(ro.id), localId: item.localId },
+              })
+            }
+          />
         )}
         ListEmptyComponent={
           <View className="items-center py-8">
