@@ -71,6 +71,27 @@ function AssetRow({
             </Text>
           ) : null}
         </View>
+        {/* GPS Location & Timestamp */}
+        <View style={{ marginTop: 6, gap: 2 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+            <MaterialIcons name="schedule" size={11} color={colors.muted} />
+            <Text style={{ fontSize: 11, color: colors.muted }}>
+              {new Date(asset.capturedAt).toLocaleString(undefined, {
+                month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+              })}
+            </Text>
+          </View>
+          {asset.captureLatitude != null && asset.captureLongitude != null ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <MaterialIcons name="gps-fixed" size={11} color={colors.primary} />
+              <Text style={{ fontSize: 11, color: colors.muted }}>
+                {asset.captureLocationAddress
+                  ? asset.captureLocationAddress
+                  : `${asset.captureLatitude.toFixed(5)}, ${asset.captureLongitude.toFixed(5)}`}
+              </Text>
+            </View>
+          ) : null}
+        </View>
       </View>
       <TouchableOpacity onPress={onDelete} style={{ padding: 8 }}>
         <MaterialIcons name="delete-outline" size={20} color={colors.error} />

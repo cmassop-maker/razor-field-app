@@ -37,3 +37,5 @@
 - [x] Display full address on each order detail screen
 - [x] Add interactive map with directions to client site on order detail
 - [x] Implement GPS tracking for drivers (live location, route tracking, stats)
+- [x] Fix order list limited to 25 orders - use offset/limit pagination with batch size 500
+- [x] Add GPS coordinates and timestamp to each asset capture (serialization location tracking)

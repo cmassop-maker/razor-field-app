@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Text,
   View,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
@@ -14,6 +15,7 @@ import { useStore } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
+import * as Location from "expo-location";
 import { v4 as uuidv4 } from "uuid";
 import type { AssetCondition, CapturedAsset } from "@/lib/types";
 
@@ -33,6 +35,58 @@ export default function AssetCaptureScreen() {
   const [condition, setCondition] = useState<AssetCondition>("Good");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+
+  // GPS location state
+  const [gpsLatitude, setGpsLatitude] = useState<number | null>(null);
+  const [gpsLongitude, setGpsLongitude] = useState<number | null>(null);
+  const [gpsAddress, setGpsAddress] = useState<string | null>(null);
+  const [gpsLoading, setGpsLoading] = useState(true);
+  const [gpsError, setGpsError] = useState("");
+  const [captureTimestamp] = useState(() => new Date().toISOString());
+
+  // Capture GPS location when screen opens
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== "granted") {
+          setGpsError("Location permission denied");
+          setGpsLoading(false);
+          return;
+        }
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.High,
+        });
+        setGpsLatitude(loc.coords.latitude);
+        setGpsLongitude(loc.coords.longitude);
+
+        // Reverse geocode to get address
+        try {
+          const addresses = await Location.reverseGeocodeAsync({
+            latitude: loc.coords.latitude,
+            longitude: loc.coords.longitude,
+          });
+          if (addresses.length > 0) {
+            const a = addresses[0];
+            const parts = [
+              a.streetNumber,
+              a.street,
+              a.city,
+              a.region,
+              a.postalCode,
+            ].filter(Boolean);
+            setGpsAddress(parts.join(", ") || null);
+          }
+        } catch {
+          // Reverse geocode is optional — coordinates are still captured
+        }
+      } catch {
+        setGpsError("Could not get location");
+      } finally {
+        setGpsLoading(false);
+      }
+    })();
+  }, []);
 
   function handleScan() {
     router.push({
@@ -64,8 +118,11 @@ export default function AssetCaptureScreen() {
       serialNumber: serialNumber.trim(),
       condition,
       notes: notes.trim(),
-      capturedAt: new Date().toISOString(),
+      capturedAt: captureTimestamp,
       syncStatus: "pending",
+      captureLatitude: gpsLatitude ?? undefined,
+      captureLongitude: gpsLongitude ?? undefined,
+      captureLocationAddress: gpsAddress ?? undefined,
     };
 
     dispatch({ type: "ADD_ASSET", payload: { orderId: Number(orderId), asset } });
@@ -75,6 +132,18 @@ export default function AssetCaptureScreen() {
     }
 
     router.back();
+  }
+
+  function formatTimestamp(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      second: "2-digit",
+    });
   }
 
   return (
@@ -99,6 +168,58 @@ export default function AssetCaptureScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: 40 }}
         >
+          {/* GPS Location & Timestamp Banner */}
+          <View
+            className="rounded-xl p-3 mb-4 border"
+            style={{ backgroundColor: colors.surface, borderColor: colors.border }}
+          >
+            <View className="flex-row items-center mb-2">
+              <MaterialIcons name="gps-fixed" size={16} color={colors.primary} />
+              <Text className="text-xs font-semibold text-primary ml-1.5 uppercase tracking-wider">
+                Capture Location
+              </Text>
+            </View>
+
+            {/* Timestamp */}
+            <View className="flex-row items-center mb-1.5">
+              <MaterialIcons name="schedule" size={14} color={colors.muted} />
+              <Text className="text-sm text-foreground ml-1.5">
+                {formatTimestamp(captureTimestamp)}
+              </Text>
+            </View>
+
+            {/* GPS Coordinates */}
+            {gpsLoading ? (
+              <View className="flex-row items-center">
+                <ActivityIndicator size="small" color={colors.primary} />
+                <Text className="text-sm text-muted ml-2">Acquiring GPS location...</Text>
+              </View>
+            ) : gpsLatitude !== null && gpsLongitude !== null ? (
+              <>
+                <View className="flex-row items-center mb-1">
+                  <MaterialIcons name="location-on" size={14} color={colors.success} />
+                  <Text className="text-sm text-foreground ml-1.5">
+                    {gpsLatitude.toFixed(6)}, {gpsLongitude.toFixed(6)}
+                  </Text>
+                </View>
+                {gpsAddress ? (
+                  <View className="flex-row items-start ml-5">
+                    <Text className="text-xs text-muted" numberOfLines={2}>
+                      {gpsAddress}
+                    </Text>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              <View className="flex-row items-center">
+                <MaterialIcons name="location-off" size={14} color={colors.error} />
+                <Text className="text-sm text-error ml-1.5">
+                  {gpsError || "Location unavailable"}
+                </Text>
+              </View>
+            )}
+          </View>
+
           {/* Make */}
           <View className="mb-4">
             <Text className="text-sm font-medium text-muted mb-1.5">Make *</Text>

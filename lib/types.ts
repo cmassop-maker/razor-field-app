@@ -50,6 +50,10 @@ export interface CapturedAsset {
   notes: string;
   capturedAt: string; // ISO timestamp
   syncStatus: SyncStatus;
+  // GPS location where the asset was captured/serialized
+  captureLatitude?: number;
+  captureLongitude?: number;
+  captureLocationAddress?: string; // Reverse-geocoded address (if available)
 }
 
 export interface CapturedSignature {

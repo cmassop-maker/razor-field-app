@@ -33,6 +33,26 @@ describe("Domain Types", () => {
     expect(asset.syncStatus).toBe("pending");
   });
 
+  it("should create a CapturedAsset with GPS location data", () => {
+    const asset: CapturedAsset = {
+      localId: "test-uuid-gps",
+      orderId: 200,
+      make: "HP",
+      model: "EliteBook 840",
+      serialNumber: "HP-SN-GPS-001",
+      condition: "Excellent",
+      notes: "",
+      capturedAt: new Date().toISOString(),
+      syncStatus: "pending",
+      captureLatitude: 30.2672,
+      captureLongitude: -97.7431,
+      captureLocationAddress: "123 Main St, Austin, TX 78701",
+    };
+    expect(asset.captureLatitude).toBe(30.2672);
+    expect(asset.captureLongitude).toBe(-97.7431);
+    expect(asset.captureLocationAddress).toContain("Austin");
+  });
+
   it("should create a valid CapturedSignature", () => {
     const sig: CapturedSignature = {
       localId: "sig-uuid-1",

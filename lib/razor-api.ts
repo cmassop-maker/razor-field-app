@@ -153,36 +153,31 @@ export async function signOut(): Promise<void> {
 
 /**
  * Fetch ALL inbound orders from Razor ERP.
- * Uses pagination to ensure every order is retrieved.
+ * The /InboundOrder/all endpoint uses offset + limit pagination.
+ * We use a large limit per request and loop until all orders are retrieved.
  */
 export async function fetchInboundOrders(): Promise<RazorInboundOrder[]> {
   if (!client) throw new Error("Razor API client not initialized");
   const allOrders: RazorInboundOrder[] = [];
-  let page = 1;
-  const pageSize = 100;
-  try {
-    // First try the /all endpoint (returns everything)
-    const res = await client.get("/InboundOrder/all");
-    const data = res.data;
-    const orders: RazorInboundOrder[] = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
-    if (orders.length > 0) return orders;
-  } catch {
-    // Fall through to paginated approach
-  }
-  // Paginated fallback
+  const batchSize = 500; // large batch to minimise round-trips
+  let offset = 0;
+
   try {
     while (true) {
-      const res = await client.get("/InboundOrder", {
-        params: { page, pageSize },
+      const res = await client.get("/InboundOrder/all", {
+        params: { offset, limit: batchSize },
       });
       const data = res.data;
+      // API may return a flat array or an object with items/data
       const items: RazorInboundOrder[] = Array.isArray(data)
         ? data
         : data?.items ?? data?.data ?? [];
       allOrders.push(...items);
-      if (items.length < pageSize) break;
-      page++;
-      if (page > 50) break; // safety limit
+      // If we got fewer than the batch size, we've reached the end
+      if (items.length < batchSize) break;
+      offset += batchSize;
+      // Safety limit: 50 batches = 25,000 orders max
+      if (offset >= batchSize * 50) break;
     }
   } catch (error: any) {
     if (allOrders.length > 0) return allOrders;
