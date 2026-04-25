@@ -437,26 +437,45 @@ export default function OrderDetailScreen() {
 
       {/* Bottom Action Bar */}
       <View
-        className="absolute bottom-0 left-0 right-0 flex-row gap-3 px-4 pt-3 pb-8 border-t"
+        className="absolute bottom-0 left-0 right-0 px-4 pt-3 pb-8 border-t"
         style={{ backgroundColor: colors.background, borderTopColor: colors.border }}
       >
-        <TouchableOpacity
-          className="flex-1 flex-row items-center justify-center gap-2 py-3.5 rounded-xl"
-          style={{ backgroundColor: colors.primary }}
-          onPress={() =>
-            router.push({
-              pathname: "/asset-capture",
-              params: { orderId: String(ro.id) },
-            })
-          }
-          activeOpacity={0.8}
-        >
-          <MaterialIcons name="add-circle" size={20} color="#FFFFFF" />
-          <Text className="text-white font-semibold">Capture Asset</Text>
-        </TouchableOpacity>
+        {/* Top row: Capture Asset + Batch Scan */}
+        <View className="flex-row gap-3 mb-2">
+          <TouchableOpacity
+            className="flex-1 flex-row items-center justify-center gap-2 py-3.5 rounded-xl"
+            style={{ backgroundColor: colors.primary }}
+            onPress={() =>
+              router.push({
+                pathname: "/asset-capture",
+                params: { orderId: String(ro.id) },
+              })
+            }
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="add-circle" size={20} color="#FFFFFF" />
+            <Text className="text-white font-semibold">Capture</Text>
+          </TouchableOpacity>
 
+          <TouchableOpacity
+            className="flex-1 flex-row items-center justify-center gap-2 py-3.5 rounded-xl"
+            style={{ backgroundColor: colors.primary }}
+            onPress={() =>
+              router.push({
+                pathname: "/batch-scan",
+                params: { orderId: String(ro.id) },
+              })
+            }
+            activeOpacity={0.8}
+          >
+            <MaterialIcons name="playlist-add-check" size={20} color="#FFFFFF" />
+            <Text className="text-white font-semibold">Batch Scan</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Bottom row: Signature */}
         <TouchableOpacity
-          className="flex-1 flex-row items-center justify-center gap-2 py-3.5 rounded-xl border"
+          className="flex-row items-center justify-center gap-2 py-3.5 rounded-xl border"
           style={{ borderColor: colors.primary }}
           onPress={() =>
             router.push({

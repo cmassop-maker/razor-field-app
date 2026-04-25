@@ -25,9 +25,10 @@ try {
 }
 
 export default function ScannerScreen() {
-  const { orderId, continuous: continuousParam } = useLocalSearchParams<{
+  const { orderId, continuous: continuousParam, returnTo } = useLocalSearchParams<{
     orderId: string;
     continuous?: string;
+    returnTo?: string;
   }>();
   const isContinuous = continuousParam === "true";
   const colors = useColors();
@@ -88,16 +89,19 @@ export default function ScannerScreen() {
     [isContinuous]
   );
 
+  // Determine which screen to return to
+  const returnPath = returnTo === "batch-scan" ? "/batch-scan" : "/asset-capture";
+
   function handleUseValue(value: string) {
     router.navigate({
-      pathname: "/asset-capture",
+      pathname: returnPath as any,
       params: { orderId, scannedSerial: value.trim(), _scanTs: Date.now().toString() },
     });
   }
 
   function handleUseContinuousValues() {
     router.navigate({
-      pathname: "/asset-capture",
+      pathname: returnPath as any,
       params: {
         orderId,
         scannedSerials: JSON.stringify(scannedList),
