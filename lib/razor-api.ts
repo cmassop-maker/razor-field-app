@@ -426,11 +426,12 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
   // Build the payload with all required fields per Razor ERP validation:
   // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
   // lotAutoName must reference an existing lot on the order (e.g. "21502")
-  // Field name mapping: Razor ERP uses "mfg" for manufacturer and "serial#" for serial number
+  // Field names verified from Razor ERP Swagger docs (POST /api/v1/Asset):
+  //   manufacturer (NOT make/mfg), serial (NOT serialNumber/serial#), model
   const payload: Record<string, unknown> = {
-    "mfg": asset.make,
-    "model": asset.model,
-    "serial#": asset.serialNumber,
+    manufacturer: asset.make,
+    model: asset.model,
+    serial: asset.serialNumber,
     quantity: 1,
     uniqueId: uniqueId,
     lotAutoName: asset.lotAutoName || "Asset",
