@@ -203,6 +203,12 @@ describe("Razor API Module", () => {
     expect(typeof api.searchItemMaster).toBe("function");
     expect(typeof api.createItemMaster).toBe("function");
     expect(typeof api.findOrCreateItemMaster).toBe("function");
+    expect(typeof api.lookupManufacturers).toBe("function");
+    expect(typeof api.findManufacturerId).toBe("function");
+    expect(typeof api.lookupCategories).toBe("function");
+    expect(typeof api.findCategoryId).toBe("function");
+    expect(typeof api.lookupItemTypes).toBe("function");
+    expect(typeof api.findItemTypeId).toBe("function");
   });
 
   it("should return null client before initialization", async () => {

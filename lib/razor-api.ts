@@ -404,6 +404,141 @@ export async function updateOrderNotes(id: number, notes: string) {
 const itemMasterCache = new Map<string, number>();
 
 /**
+ * Cached lookup data from Razor ERP.
+ * Loaded once per session to avoid repeated API calls.
+ */
+let manufacturersCache: Array<{ id: number; name: string }> | null = null;
+let categoriesCache: Array<{ id: number; name: string }> | null = null;
+let itemTypesCache: Array<{ id: number; name: string }> | null = null;
+
+/**
+ * Fetch the list of manufacturers from Razor ERP Lookup.
+ * GET /api/v1/Lookup/manufacturers
+ * Cached after first call.
+ */
+export async function lookupManufacturers(): Promise<Array<{ id: number; name: string }>> {
+  if (manufacturersCache) return manufacturersCache;
+  if (!client) return [];
+  try {
+    console.log("[RazorAPI] Fetching manufacturer lookup list...");
+    const res = await client.get("/Lookup/manufacturers");
+    const data = res.data;
+    const items = Array.isArray(data) ? data : data?.items ?? [];
+    const mapped = items.map((m: any) => ({ id: m.id ?? m.Id, name: m.name ?? m.Name ?? m.title ?? "" }));
+    manufacturersCache = mapped;
+    console.log(`[RazorAPI] Loaded ${mapped.length} manufacturers`);
+    return mapped;
+  } catch (e: any) {
+    console.warn(`[RazorAPI] Failed to fetch manufacturers: ${e?.message}`);
+    return [];
+  }
+}
+
+/**
+ * Find a manufacturer ID by name (case-insensitive partial match).
+ * Returns the first matching manufacturer's ID, or null if not found.
+ */
+export async function findManufacturerId(name: string): Promise<number | null> {
+  if (!name) return null;
+  const manufacturers = await lookupManufacturers();
+  const lower = name.trim().toLowerCase();
+  // Try exact match first
+  const exact = manufacturers.find((m) => m.name.toLowerCase() === lower);
+  if (exact) return exact.id;
+  // Try partial match (manufacturer name contains the search term or vice versa)
+  const partial = manufacturers.find(
+    (m) => m.name.toLowerCase().includes(lower) || lower.includes(m.name.toLowerCase())
+  );
+  if (partial) return partial.id;
+  return null;
+}
+
+/**
+ * Fetch the list of inventory categories from Razor ERP Lookup.
+ * GET /api/v1/Lookup/inventory-categories
+ * Cached after first call.
+ */
+export async function lookupCategories(): Promise<Array<{ id: number; name: string }>> {
+  if (categoriesCache) return categoriesCache;
+  if (!client) return [];
+  try {
+    console.log("[RazorAPI] Fetching inventory categories lookup list...");
+    const res = await client.get("/Lookup/inventory-categories");
+    const data = res.data;
+    const items = Array.isArray(data) ? data : data?.items ?? [];
+    const mapped = items.map((c: any) => ({ id: c.id ?? c.Id, name: c.name ?? c.Name ?? c.title ?? "" }));
+    categoriesCache = mapped;
+    console.log(`[RazorAPI] Loaded ${mapped.length} categories`);
+    return mapped;
+  } catch (e: any) {
+    console.warn(`[RazorAPI] Failed to fetch categories: ${e?.message}`);
+    return [];
+  }
+}
+
+/**
+ * Find a category ID by asset type name (case-insensitive).
+ * Falls back to the first available category if no match found.
+ */
+export async function findCategoryId(assetType?: string): Promise<number | null> {
+  const categories = await lookupCategories();
+  if (categories.length === 0) return null;
+  if (assetType) {
+    const lower = assetType.trim().toLowerCase();
+    const match = categories.find(
+      (c) => c.name.toLowerCase() === lower || c.name.toLowerCase().includes(lower) || lower.includes(c.name.toLowerCase())
+    );
+    if (match) return match.id;
+  }
+  // Default to first category if no match
+  console.log(`[RazorAPI] No category match for "${assetType}", using first available: ${categories[0].name} (id=${categories[0].id})`);
+  return categories[0].id;
+}
+
+/**
+ * Fetch the list of item types from Razor ERP Lookup.
+ * GET /api/v1/Lookup/item-types
+ * Cached after first call.
+ */
+export async function lookupItemTypes(): Promise<Array<{ id: number; name: string }>> {
+  if (itemTypesCache) return itemTypesCache;
+  if (!client) return [];
+  try {
+    console.log("[RazorAPI] Fetching item types lookup list...");
+    const res = await client.get("/Lookup/item-types");
+    const data = res.data;
+    const items = Array.isArray(data) ? data : data?.items ?? [];
+    const mapped = items.map((t: any) => ({ id: t.id ?? t.Id, name: t.name ?? t.Name ?? t.title ?? "" }));
+    itemTypesCache = mapped;
+    console.log(`[RazorAPI] Loaded ${mapped.length} item types`);
+    return mapped;
+  } catch (e: any) {
+    console.warn(`[RazorAPI] Failed to fetch item types: ${e?.message}`);
+    return [];
+  }
+}
+
+/**
+ * Find an item type ID by asset type name (case-insensitive).
+ * Maps common asset types: Desktop, Laptop, Monitor, etc.
+ * Falls back to the first available item type if no match found.
+ */
+export async function findItemTypeId(assetType?: string): Promise<number | null> {
+  const itemTypes = await lookupItemTypes();
+  if (itemTypes.length === 0) return null;
+  if (assetType) {
+    const lower = assetType.trim().toLowerCase();
+    const match = itemTypes.find(
+      (t) => t.name.toLowerCase() === lower || t.name.toLowerCase().includes(lower) || lower.includes(t.name.toLowerCase())
+    );
+    if (match) return match.id;
+  }
+  // Default to first item type if no match
+  console.log(`[RazorAPI] No item type match for "${assetType}", using first available: ${itemTypes[0].name} (id=${itemTypes[0].id})`);
+  return itemTypes[0].id;
+}
+
+/**
  * Search for an existing ItemMaster by model name.
  * Tries multiple search strategies:
  *   1. GET /api/v1/ItemMaster/by-item-number/{itemNumber}
@@ -470,23 +605,43 @@ export async function searchItemMaster(modelName: string): Promise<number | null
 /**
  * Create a new ItemMaster in Razor ERP.
  * POST /api/v1/ItemMaster
+ * Requires: manufacturerId and primaryCategoryId (both numeric).
  * Returns the new itemMasterId.
  */
-export async function createItemMaster(modelName: string, manufacturer?: string): Promise<number> {
+export async function createItemMaster(
+  modelName: string,
+  manufacturer?: string,
+  assetType?: string,
+): Promise<number> {
   if (!client) throw new Error("Razor API client not initialized");
+
+  // Resolve required fields: manufacturerId, primaryCategoryId, and itemTypeId
+  const manufacturerId = manufacturer ? await findManufacturerId(manufacturer) : null;
+  const categoryId = await findCategoryId(assetType);
+  const itemTypeId = await findItemTypeId(assetType);
+
+  if (!manufacturerId) {
+    console.warn(`[RazorAPI] Could not find manufacturerId for "${manufacturer}". ItemMaster creation may fail.`);
+  }
+  if (!categoryId) {
+    console.warn(`[RazorAPI] Could not find categoryId for "${assetType}". ItemMaster creation may fail.`);
+  }
+  if (!itemTypeId) {
+    console.warn(`[RazorAPI] Could not find itemTypeId for "${assetType}". ItemMaster creation may fail.`);
+  }
 
   const payload: Record<string, unknown> = {
     itemNumber: modelName,
     title: modelName,
   };
 
-  // If manufacturer is provided, try to include it
-  // Note: ItemMaster uses manufacturerId (numeric), not a string name.
-  // We skip manufacturerId since we don't have the numeric ID.
-  // The manufacturer string will still be set on the Asset itself.
+  // Include required numeric IDs
+  if (manufacturerId) payload.manufacturerId = manufacturerId;
+  if (categoryId) payload.primaryCategoryId = categoryId;
+  if (itemTypeId) payload.itemTypeId = itemTypeId;
 
   try {
-    console.log(`[RazorAPI] Creating new ItemMaster: "${modelName}"`);
+    console.log(`[RazorAPI] Creating new ItemMaster: "${modelName}" (mfr=${manufacturerId}, cat=${categoryId}, type=${itemTypeId})`);
     const res = await client.post("/ItemMaster", payload);
     // Response is the new itemMasterId (just a number)
     const newId = typeof res.data === "number" ? res.data : res.data?.id;
@@ -509,7 +664,11 @@ export async function createItemMaster(modelName: string, manufacturer?: string)
  * Find an existing ItemMaster by model name, or create one if not found.
  * Returns the itemMasterId to use in asset creation.
  */
-export async function findOrCreateItemMaster(modelName: string, manufacturer?: string): Promise<number> {
+export async function findOrCreateItemMaster(
+  modelName: string,
+  manufacturer?: string,
+  assetType?: string,
+): Promise<number> {
   // Search first
   const existingId = await searchItemMaster(modelName);
   if (existingId !== null) {
@@ -518,7 +677,7 @@ export async function findOrCreateItemMaster(modelName: string, manufacturer?: s
 
   // Not found — create it
   console.log(`[RazorAPI] ItemMaster "${modelName}" not found, creating...`);
-  return createItemMaster(modelName, manufacturer);
+  return createItemMaster(modelName, manufacturer, assetType);
 }
 
 // ---- Assets ----
@@ -555,7 +714,7 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
   let itemMasterId: number | undefined;
   if (asset.model) {
     try {
-      itemMasterId = await findOrCreateItemMaster(asset.model, asset.make);
+      itemMasterId = await findOrCreateItemMaster(asset.model, asset.make, asset.assetTypeName);
       console.log(`[RazorAPI] Resolved itemMasterId=${itemMasterId} for model "${asset.model}"`);
     } catch (e: any) {
       console.warn(`[RazorAPI] Could not resolve ItemMaster for "${asset.model}": ${e?.message}. Will try without itemMasterId.`);
