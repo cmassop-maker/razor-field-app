@@ -200,6 +200,9 @@ describe("Razor API Module", () => {
     expect(typeof api.uploadOrderFile).toBe("function");
     expect(typeof api.uploadPdfToOrder).toBe("function");
     expect(typeof api.geocodeAddress).toBe("function");
+    expect(typeof api.searchItemMaster).toBe("function");
+    expect(typeof api.createItemMaster).toBe("function");
+    expect(typeof api.findOrCreateItemMaster).toBe("function");
   });
 
   it("should return null client before initialization", async () => {

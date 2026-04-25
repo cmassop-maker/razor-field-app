@@ -75,3 +75,4 @@
 - [x] Upload PDF report to the Razor ERP Files tab on the order
 - [x] Bug fix: Asset serial number AND manufacturer (make) not transferring to Razor ERP when synced — Swagger docs confirmed correct fields are "manufacturer" and "serial" (not make/mfg/serialNumber/serial#)
 - [x] Show the Razor-assigned UID (autoName) on the PDF report for each asset
+- [x] Bug fix: Asset creation fails with 404 "Master item not found" — implemented findOrCreateItemMaster: searches by-item-number and /all, auto-creates if missing, caches results

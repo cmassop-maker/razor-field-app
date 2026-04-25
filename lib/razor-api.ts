@@ -395,6 +395,132 @@ export async function updateOrderNotes(id: number, notes: string) {
   return client.patch(`/InboundOrder/${id}/notes`, { notes });
 }
 
+// ---- Item Master Lookup / Auto-Create ----
+
+/**
+ * In-memory cache of ItemMaster lookups to avoid repeated API calls
+ * within the same session. Key = lowercase model name, Value = itemMasterId.
+ */
+const itemMasterCache = new Map<string, number>();
+
+/**
+ * Search for an existing ItemMaster by model name.
+ * Tries multiple search strategies:
+ *   1. GET /api/v1/ItemMaster/by-item-number/{itemNumber}
+ *   2. GET /api/v1/ItemMaster/all?search={model}
+ * Returns the itemMasterId if found, or null.
+ */
+export async function searchItemMaster(modelName: string): Promise<number | null> {
+  if (!client) return null;
+
+  const cacheKey = modelName.trim().toLowerCase();
+  if (itemMasterCache.has(cacheKey)) {
+    const cached = itemMasterCache.get(cacheKey)!;
+    console.log(`[RazorAPI] ItemMaster cache hit for "${modelName}": id=${cached}`);
+    return cached;
+  }
+
+  // Strategy 1: Direct lookup by item number
+  try {
+    console.log(`[RazorAPI] Searching ItemMaster by-item-number: "${modelName}"`);
+    const res = await client.get(`/ItemMaster/by-item-number/${encodeURIComponent(modelName)}`);
+    const data = res.data;
+    if (data && typeof data.id === "number") {
+      console.log(`[RazorAPI] Found ItemMaster by-item-number: id=${data.id}`);
+      itemMasterCache.set(cacheKey, data.id);
+      return data.id;
+    }
+  } catch (e: any) {
+    console.log(`[RazorAPI] by-item-number lookup failed (${e?.response?.status}):`, e?.message);
+  }
+
+  // Strategy 2: Search all with query param
+  try {
+    console.log(`[RazorAPI] Searching ItemMaster/all for: "${modelName}"`);
+    const res = await client.get("/ItemMaster/all", {
+      params: { search: modelName, itemNumber: modelName },
+    });
+    const data = res.data;
+    const items = Array.isArray(data) ? data : data?.items ?? [];
+    // Find exact match (case-insensitive)
+    const exact = items.find(
+      (item: any) =>
+        item.itemNumber?.toLowerCase() === cacheKey ||
+        item.title?.toLowerCase() === cacheKey ||
+        item.mpn?.toLowerCase() === cacheKey
+    );
+    if (exact && typeof exact.id === "number") {
+      console.log(`[RazorAPI] Found ItemMaster via search: id=${exact.id}`);
+      itemMasterCache.set(cacheKey, exact.id);
+      return exact.id;
+    }
+    // Accept first result if only one returned
+    if (items.length === 1 && typeof items[0].id === "number") {
+      console.log(`[RazorAPI] Single ItemMaster result from search: id=${items[0].id}`);
+      itemMasterCache.set(cacheKey, items[0].id);
+      return items[0].id;
+    }
+  } catch (e: any) {
+    console.log(`[RazorAPI] ItemMaster/all search failed (${e?.response?.status}):`, e?.message);
+  }
+
+  return null;
+}
+
+/**
+ * Create a new ItemMaster in Razor ERP.
+ * POST /api/v1/ItemMaster
+ * Returns the new itemMasterId.
+ */
+export async function createItemMaster(modelName: string, manufacturer?: string): Promise<number> {
+  if (!client) throw new Error("Razor API client not initialized");
+
+  const payload: Record<string, unknown> = {
+    itemNumber: modelName,
+    title: modelName,
+  };
+
+  // If manufacturer is provided, try to include it
+  // Note: ItemMaster uses manufacturerId (numeric), not a string name.
+  // We skip manufacturerId since we don't have the numeric ID.
+  // The manufacturer string will still be set on the Asset itself.
+
+  try {
+    console.log(`[RazorAPI] Creating new ItemMaster: "${modelName}"`);
+    const res = await client.post("/ItemMaster", payload);
+    // Response is the new itemMasterId (just a number)
+    const newId = typeof res.data === "number" ? res.data : res.data?.id;
+    if (typeof newId !== "number" || newId <= 0) {
+      throw new Error(`Unexpected response from ItemMaster creation: ${JSON.stringify(res.data)}`);
+    }
+    console.log(`[RazorAPI] ItemMaster created: id=${newId} for "${modelName}"`);
+    itemMasterCache.set(modelName.trim().toLowerCase(), newId);
+    return newId;
+  } catch (e: any) {
+    const status = e?.response?.status;
+    const body = e?.response?.data;
+    console.error(`[RazorAPI] ItemMaster creation failed (${status}):`, JSON.stringify(body));
+    const errorDetail = body ? JSON.stringify(body) : e?.message;
+    throw new Error(`ItemMaster creation failed (${status}): ${errorDetail}`);
+  }
+}
+
+/**
+ * Find an existing ItemMaster by model name, or create one if not found.
+ * Returns the itemMasterId to use in asset creation.
+ */
+export async function findOrCreateItemMaster(modelName: string, manufacturer?: string): Promise<number> {
+  // Search first
+  const existingId = await searchItemMaster(modelName);
+  if (existingId !== null) {
+    return existingId;
+  }
+
+  // Not found — create it
+  console.log(`[RazorAPI] ItemMaster "${modelName}" not found, creating...`);
+  return createItemMaster(modelName, manufacturer);
+}
+
 // ---- Assets ----
 
 export interface CreateAssetPayload {
@@ -423,7 +549,20 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
   // Generate a unique ID for this asset (UUID v4 format)
   const uniqueId = generateUUID();
 
-  // Build the payload with all required fields per Razor ERP validation:
+  // Step 1: Resolve the ItemMaster ID for this model.
+  // Razor ERP validates the model against its ItemMaster table.
+  // If the model doesn't exist, we auto-create it.
+  let itemMasterId: number | undefined;
+  if (asset.model) {
+    try {
+      itemMasterId = await findOrCreateItemMaster(asset.model, asset.make);
+      console.log(`[RazorAPI] Resolved itemMasterId=${itemMasterId} for model "${asset.model}"`);
+    } catch (e: any) {
+      console.warn(`[RazorAPI] Could not resolve ItemMaster for "${asset.model}": ${e?.message}. Will try without itemMasterId.`);
+    }
+  }
+
+  // Step 2: Build the payload with all required fields per Razor ERP validation:
   // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
   // lotAutoName must reference an existing lot on the order (e.g. "21502")
   // Field names verified from Razor ERP Swagger docs (POST /api/v1/Asset):
@@ -437,6 +576,11 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     lotAutoName: asset.lotAutoName || "Asset",
     assetWorkflowStep: "Data Collection",
   };
+
+  // Include the resolved itemMasterId if we have one
+  if (itemMasterId) {
+    payload.itemMasterId = itemMasterId;
+  }
 
   // Add optional fields if provided
   if (asset.assetTypeName) payload.assetTypeName = asset.assetTypeName;
