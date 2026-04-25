@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   Text,
   View,
@@ -25,6 +25,9 @@ import {
   suggestMakes,
   suggestModels,
 } from "@/lib/autocomplete-db";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const BATCH_STATE_KEY = "batch_scan_state";
 
 const CONDITIONS: AssetCondition[] = ["Used", "New"];
 
@@ -54,12 +57,24 @@ const ASSET_TYPE_ICONS: Record<AssetType, string> = {
   Other: "devices-other",
 };
 
+interface BatchState {
+  orderId: string;
+  assetType: AssetType;
+  make: string;
+  model: string;
+  condition: AssetCondition;
+  notes: string;
+  savedAssets: { serial: string; localId: string }[];
+}
+
 /**
  * Batch Scan Screen
  *
  * Set make, model, asset type, and condition ONCE,
  * then scan multiple serial numbers consecutively.
  * Each scanned serial auto-creates an asset with the pre-set info.
+ *
+ * State is persisted to AsyncStorage so it survives navigation to/from scanner.
  */
 export default function BatchScanScreen() {
   const params = useLocalSearchParams<{
@@ -71,8 +86,9 @@ export default function BatchScanScreen() {
   const { state, dispatch } = useStore();
   const colors = useColors();
 
-  // Phase: "setup" = fill in make/model, "scanning" = actively scanning serials
-  const [phase, setPhase] = useState<"setup" | "scanning">("setup");
+  // Phase: "setup" = fill in make/model, "results" = show scanned results
+  const [phase, setPhase] = useState<"setup" | "results">("setup");
+  const [initialized, setInitialized] = useState(false);
 
   // Shared fields (set once)
   const [assetType, setAssetType] = useState<AssetType>("Laptop");
@@ -103,12 +119,8 @@ export default function BatchScanScreen() {
   const [gpsLongitude, setGpsLongitude] = useState<number | null>(null);
   const [gpsAddress, setGpsAddress] = useState<string | null>(null);
 
-  // Duplicate detection
-  const allCapturedSerials = useRef<
-    Map<string, { orderId: number; orderNum: string }>
-  >(new Map());
-
-  useEffect(() => {
+  // Duplicate detection — build from current orders state
+  const allCapturedSerials = useMemo(() => {
     const map = new Map<string, { orderId: number; orderNum: string }>();
     for (const order of state.orders) {
       for (const asset of order.assets) {
@@ -121,8 +133,73 @@ export default function BatchScanScreen() {
         }
       }
     }
-    allCapturedSerials.current = map;
+    return map;
   }, [state.orders]);
+
+  // ---- Persist batch state to AsyncStorage so it survives scanner navigation ----
+  async function saveBatchState() {
+    const batchState: BatchState = {
+      orderId: orderId || "",
+      assetType,
+      make,
+      model,
+      condition,
+      notes,
+      savedAssets,
+    };
+    try {
+      await AsyncStorage.setItem(BATCH_STATE_KEY, JSON.stringify(batchState));
+    } catch {
+      // Ignore storage errors
+    }
+  }
+
+  async function loadBatchState(): Promise<BatchState | null> {
+    try {
+      const raw = await AsyncStorage.getItem(BATCH_STATE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as BatchState;
+        // Only restore if same order
+        if (parsed.orderId === orderId) {
+          return parsed;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+    return null;
+  }
+
+  async function clearBatchState() {
+    try {
+      await AsyncStorage.removeItem(BATCH_STATE_KEY);
+    } catch {
+      // Ignore
+    }
+  }
+
+  // Restore state on mount
+  useEffect(() => {
+    (async () => {
+      const saved = await loadBatchState();
+      if (saved && saved.make && saved.model) {
+        setAssetType(saved.assetType);
+        setMake(saved.make);
+        setModel(saved.model);
+        setCondition(saved.condition);
+        setNotes(saved.notes);
+        setSavedAssets(saved.savedAssets || []);
+        // If we have saved assets or are returning from scanner, show results
+        if (saved.savedAssets && saved.savedAssets.length > 0) {
+          setPhase("results");
+        } else {
+          // We have make/model set, show results phase ready for scanning
+          setPhase("results");
+        }
+      }
+      setInitialized(true);
+    })();
+  }, []);
 
   // Capture GPS on mount
   useEffect(() => {
@@ -185,96 +262,106 @@ export default function BatchScanScreen() {
     };
   }, [make, model]);
 
-  // Process returned scanned serials from scanner
+  // ---- Process returned scanned serials from scanner ----
   useEffect(() => {
     const raw = params.scannedSerials;
     const ts = params._scanTs;
-    if (raw && ts && ts !== lastProcessedTs.current) {
-      lastProcessedTs.current = ts;
-      try {
-        const parsed = JSON.parse(raw) as string[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Auto-save each scanned serial as an asset
-          let newSaved: { serial: string; localId: string }[] = [];
-          let duplicates: string[] = [];
+    if (!raw || !ts || ts === lastProcessedTs.current) return;
+    if (!initialized) return; // Wait for state restore first
 
-          for (const serial of parsed) {
-            const trimmed = serial.trim();
-            if (!trimmed) continue;
+    lastProcessedTs.current = ts;
+    try {
+      const parsed = JSON.parse(raw) as string[];
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
 
-            // Check for duplicates
-            const key = trimmed.toUpperCase();
-            const existing = allCapturedSerials.current.get(key);
-            if (existing) {
-              duplicates.push(trimmed);
-              continue;
-            }
+      let newSaved: { serial: string; localId: string }[] = [];
+      let duplicates: string[] = [];
 
-            // Also check within this batch
-            const alreadyInBatch = savedAssets.some(
-              (a) => a.serial.toUpperCase() === key
-            );
-            const alreadyInNewBatch = newSaved.some(
-              (a) => a.serial.toUpperCase() === key
-            );
-            if (alreadyInBatch || alreadyInNewBatch) {
-              duplicates.push(trimmed);
-              continue;
-            }
+      for (const serial of parsed) {
+        const trimmed = serial.trim();
+        if (!trimmed) continue;
 
-            const localId = generateId();
-            const asset: CapturedAsset = {
-              localId,
-              orderId: Number(orderId),
-              assetType,
-              make: make.trim(),
-              model: model.trim(),
-              serialNumber: trimmed,
-              condition,
-              notes: notes.trim(),
-              capturedAt: new Date().toISOString(),
-              syncStatus: "pending",
-              captureLatitude: gpsLatitude ?? undefined,
-              captureLongitude: gpsLongitude ?? undefined,
-              captureLocationAddress: gpsAddress ?? undefined,
-            };
-
-            dispatch({
-              type: "ADD_ASSET",
-              payload: { orderId: Number(orderId), asset },
-            });
-            recordMakeModel(make.trim(), model.trim(), assetType);
-            newSaved.push({ serial: trimmed, localId });
-
-            // Add to duplicate map so subsequent items in same batch are caught
-            allCapturedSerials.current.set(key, {
-              orderId: Number(orderId),
-              orderNum: orderId,
-            });
-          }
-
-          if (newSaved.length > 0) {
-            setSavedAssets((prev) => [...prev, ...newSaved]);
-            if (Platform.OS !== "web") {
-              Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Success
-              );
-            }
-          }
-
-          if (duplicates.length > 0) {
-            Alert.alert(
-              "Duplicates Skipped",
-              `${duplicates.length} serial(s) were already captured and skipped:\n${duplicates.join(", ")}`,
-              [{ text: "OK" }]
-            );
-          }
+        // Check for duplicates in existing orders
+        const key = trimmed.toUpperCase();
+        if (allCapturedSerials.has(key)) {
+          duplicates.push(trimmed);
+          continue;
         }
-      } catch {
-        // Invalid JSON
+
+        // Check within current batch (already saved + new in this batch)
+        const alreadyInBatch = savedAssets.some(
+          (a) => a.serial.toUpperCase() === key
+        );
+        const alreadyInNewBatch = newSaved.some(
+          (a) => a.serial.toUpperCase() === key
+        );
+        if (alreadyInBatch || alreadyInNewBatch) {
+          duplicates.push(trimmed);
+          continue;
+        }
+
+        const localId = generateId();
+        const asset: CapturedAsset = {
+          localId,
+          orderId: Number(orderId),
+          assetType,
+          make: make.trim(),
+          model: model.trim(),
+          serialNumber: trimmed,
+          condition,
+          notes: notes.trim(),
+          capturedAt: new Date().toISOString(),
+          syncStatus: "pending",
+          captureLatitude: gpsLatitude ?? undefined,
+          captureLongitude: gpsLongitude ?? undefined,
+          captureLocationAddress: gpsAddress ?? undefined,
+        };
+
+        dispatch({
+          type: "ADD_ASSET",
+          payload: { orderId: Number(orderId), asset },
+        });
+        recordMakeModel(make.trim(), model.trim(), assetType);
+        newSaved.push({ serial: trimmed, localId });
       }
+
+      if (newSaved.length > 0) {
+        const updatedSaved = [...savedAssets, ...newSaved];
+        setSavedAssets(updatedSaved);
+        setPhase("results");
+
+        // Persist updated state
+        const batchState: BatchState = {
+          orderId: orderId || "",
+          assetType,
+          make,
+          model,
+          condition,
+          notes,
+          savedAssets: updatedSaved,
+        };
+        AsyncStorage.setItem(BATCH_STATE_KEY, JSON.stringify(batchState)).catch(
+          () => {}
+        );
+
+        if (Platform.OS !== "web") {
+          Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success
+          );
+        }
+      }
+
+      if (duplicates.length > 0) {
+        Alert.alert(
+          "Duplicates Skipped",
+          `${duplicates.length} serial(s) were already captured and skipped:\n${duplicates.join(", ")}`,
+          [{ text: "OK" }]
+        );
+      }
+    } catch {
+      // Invalid JSON
     }
-  }, [params.scannedSerials, params._scanTs]);
+  }, [params.scannedSerials, params._scanTs, initialized]);
 
   function handleStartScanning() {
     if (!make.trim()) {
@@ -286,28 +373,55 @@ export default function BatchScanScreen() {
       return;
     }
     setError("");
-    setPhase("scanning");
 
-    // Open scanner in continuous mode
-    router.push({
-      pathname: "/scanner",
-      params: {
-        orderId,
-        continuous: "true",
-        returnTo: "batch-scan",
-      },
-    });
+    // Save state before navigating to scanner
+    const batchState: BatchState = {
+      orderId: orderId || "",
+      assetType,
+      make: make.trim(),
+      model: model.trim(),
+      condition,
+      notes,
+      savedAssets,
+    };
+    AsyncStorage.setItem(BATCH_STATE_KEY, JSON.stringify(batchState))
+      .catch(() => {})
+      .finally(() => {
+        // Open scanner in continuous mode
+        router.push({
+          pathname: "/scanner",
+          params: {
+            orderId,
+            continuous: "true",
+            returnTo: "batch-scan",
+          },
+        });
+      });
   }
 
   function handleScanMore() {
-    router.push({
-      pathname: "/scanner",
-      params: {
-        orderId,
-        continuous: "true",
-        returnTo: "batch-scan",
-      },
-    });
+    // Save state before navigating
+    const batchState: BatchState = {
+      orderId: orderId || "",
+      assetType,
+      make: make.trim(),
+      model: model.trim(),
+      condition,
+      notes,
+      savedAssets,
+    };
+    AsyncStorage.setItem(BATCH_STATE_KEY, JSON.stringify(batchState))
+      .catch(() => {})
+      .finally(() => {
+        router.push({
+          pathname: "/scanner",
+          params: {
+            orderId,
+            continuous: "true",
+            returnTo: "batch-scan",
+          },
+        });
+      });
   }
 
   function handleRemoveAsset(localId: string, serial: string) {
@@ -321,16 +435,34 @@ export default function BatchScanScreen() {
             type: "REMOVE_ASSET",
             payload: { orderId: Number(orderId), localId },
           });
-          setSavedAssets((prev) => prev.filter((a) => a.localId !== localId));
-          // Remove from duplicate map
-          allCapturedSerials.current.delete(serial.toUpperCase());
+          const updated = savedAssets.filter((a) => a.localId !== localId);
+          setSavedAssets(updated);
+          // Update persisted state
+          const batchState: BatchState = {
+            orderId: orderId || "",
+            assetType,
+            make,
+            model,
+            condition,
+            notes,
+            savedAssets: updated,
+          };
+          AsyncStorage.setItem(
+            BATCH_STATE_KEY,
+            JSON.stringify(batchState)
+          ).catch(() => {});
         },
       },
     ]);
   }
 
   function handleDone() {
+    clearBatchState();
     router.replace({ pathname: "/order/[id]", params: { id: orderId } });
+  }
+
+  function handleEditSetup() {
+    setPhase("setup");
   }
 
   function selectMakeSuggestion(suggestion: string) {
@@ -349,6 +481,17 @@ export default function BatchScanScreen() {
     setShowModelSuggestions(false);
   }
 
+  // Show loading while restoring state
+  if (!initialized) {
+    return (
+      <ScreenContainer>
+        <View className="flex-1 items-center justify-center">
+          <Text className="text-muted">Loading...</Text>
+        </View>
+      </ScreenContainer>
+    );
+  }
+
   // ==================== SETUP PHASE ====================
   if (phase === "setup") {
     return (
@@ -359,12 +502,13 @@ export default function BatchScanScreen() {
           style={{ borderBottomColor: colors.border }}
         >
           <TouchableOpacity
-            onPress={() =>
+            onPress={() => {
+              clearBatchState();
               router.replace({
                 pathname: "/order/[id]",
                 params: { id: orderId },
-              })
-            }
+              });
+            }}
             style={{ padding: 4, marginRight: 12 }}
           >
             <MaterialIcons
@@ -421,7 +565,7 @@ export default function BatchScanScreen() {
               <Text className="text-sm text-muted leading-5">
                 Fill in the device details below. Then scan multiple serial
                 numbers — each scan will automatically create an asset with
-                these details.
+                these details. Perfect for scanning 10+ identical devices.
               </Text>
             </View>
 
@@ -720,7 +864,7 @@ export default function BatchScanScreen() {
     );
   }
 
-  // ==================== SCANNING PHASE ====================
+  // ==================== RESULTS PHASE ====================
   return (
     <ScreenContainer>
       {/* Header */}
@@ -746,13 +890,15 @@ export default function BatchScanScreen() {
             {make} — {model}
           </Text>
         </View>
-        <View
-          style={[styles.savedBadge, { backgroundColor: colors.success }]}
-        >
-          <Text style={styles.savedBadgeText}>
-            {savedAssets.length} saved
-          </Text>
-        </View>
+        {savedAssets.length > 0 && (
+          <View
+            style={[styles.savedBadge, { backgroundColor: colors.success }]}
+          >
+            <Text style={styles.savedBadgeText}>
+              {savedAssets.length} saved
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Device info summary card */}
@@ -782,7 +928,7 @@ export default function BatchScanScreen() {
             </Text>
           </View>
           <TouchableOpacity
-            onPress={() => setPhase("setup")}
+            onPress={handleEditSetup}
             style={{
               paddingHorizontal: 10,
               paddingVertical: 6,
@@ -814,7 +960,7 @@ export default function BatchScanScreen() {
               className="text-base text-muted mt-4 text-center"
               style={{ maxWidth: 260 }}
             >
-              Tap "Scan More" to start scanning serial numbers
+              No serials scanned yet.{"\n"}Tap "Scan Serials" below to start.
             </Text>
           </View>
         ) : (
@@ -896,24 +1042,26 @@ export default function BatchScanScreen() {
               color="#FFFFFF"
             />
             <Text className="text-white font-semibold text-base">
-              Scan More Serials
+              {savedAssets.length === 0 ? "Scan Serials" : "Scan More Serials"}
             </Text>
           </View>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          className="rounded-xl py-3 items-center border"
-          style={{ borderColor: colors.border }}
-          onPress={handleDone}
-          activeOpacity={0.8}
-        >
-          <Text
-            className="font-semibold text-base"
-            style={{ color: colors.foreground }}
+        {savedAssets.length > 0 && (
+          <TouchableOpacity
+            className="rounded-xl py-3 items-center border"
+            style={{ borderColor: colors.border }}
+            onPress={handleDone}
+            activeOpacity={0.8}
           >
-            Done — Return to Order
-          </Text>
-        </TouchableOpacity>
+            <Text
+              className="font-semibold text-base"
+              style={{ color: colors.foreground }}
+            >
+              Done — Return to Order ({savedAssets.length} assets added)
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScreenContainer>
   );
