@@ -559,8 +559,9 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 
 /**
  * Upload a file (e.g. signature PNG) to the Razor ERP Files tab on an inbound order.
- * Tries multiple approaches: Blob-based FormData, data-URI FormData, and JSON base64.
- * The file will appear under the "Files" / "Add Files" tab on the order.
+ * Confirmed endpoints from API probing:
+ *   - /InboundOrder/{id}/attachments (401 = exists, needs auth)
+ *   - /InboundOrder/file-upload/{id} (405 = exists, needs POST)
  */
 export async function uploadOrderFile(orderId: number, base64Data: string, fileName: string) {
   if (!client) throw new Error("Razor API client not initialized");
@@ -568,14 +569,25 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
   // Strip data URI prefix if present
   const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "");
 
-  // Approach 1: Blob-based FormData (most compatible with REST APIs)
+  // Build FormData with RN-style file object (works in React Native)
+  const buildRNFormData = (fieldName: string) => {
+    const formData = new FormData();
+    formData.append(fieldName, {
+      uri: `data:image/png;base64,${cleanBase64}`,
+      name: fileName,
+      type: "image/png",
+    } as any);
+    return formData;
+  };
+
+  // Build FormData with Blob (works on web)
   const buildBlobFormData = (fieldName: string) => {
     const formData = new FormData();
     try {
       const blob = base64ToBlob(cleanBase64, "image/png");
       formData.append(fieldName, blob, fileName);
     } catch {
-      // Fallback: use RN-style object if Blob fails
+      // Fallback to RN-style
       formData.append(fieldName, {
         uri: `data:image/png;base64,${cleanBase64}`,
         name: fileName,
@@ -585,20 +597,27 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
     return formData;
   };
 
-  // Endpoints to try with multipart/form-data upload
-  const formDataEndpoints = [
-    { endpoint: `/InboundOrder/${orderId}/file`, field: "file" },
-    { endpoint: `/InboundOrder/${orderId}/files`, field: "file" },
-    { endpoint: `/InboundOrder/${orderId}/file`, field: "files" },
-    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "file" },
-    { endpoint: `/File/inbound-order/${orderId}`, field: "file" },
-    { endpoint: `/File`, field: "file" },
+  // Prioritized list: confirmed endpoints first, then variations
+  // Field names to try: file, files, attachment, formFile (common .NET naming)
+  const attempts = [
+    // Confirmed endpoint 1: /attachments
+    { endpoint: `/InboundOrder/${orderId}/attachments`, field: "file", builder: buildRNFormData },
+    { endpoint: `/InboundOrder/${orderId}/attachments`, field: "file", builder: buildBlobFormData },
+    { endpoint: `/InboundOrder/${orderId}/attachments`, field: "files", builder: buildRNFormData },
+    { endpoint: `/InboundOrder/${orderId}/attachments`, field: "formFile", builder: buildRNFormData },
+    { endpoint: `/InboundOrder/${orderId}/attachments`, field: "attachment", builder: buildRNFormData },
+    // Confirmed endpoint 2: /file-upload
+    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "file", builder: buildRNFormData },
+    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "file", builder: buildBlobFormData },
+    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "files", builder: buildRNFormData },
+    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "formFile", builder: buildRNFormData },
   ];
 
-  for (const { endpoint, field } of formDataEndpoints) {
+  for (const { endpoint, field, builder } of attempts) {
     try {
-      console.log(`[RazorAPI] Trying file upload (FormData) to: ${endpoint} (field: ${field})`);
-      const formData = buildBlobFormData(field);
+      const builderName = builder === buildRNFormData ? "RN" : "Blob";
+      console.log(`[RazorAPI] Trying file upload to: ${endpoint} (field: ${field}, type: ${builderName})`);
+      const formData = builder(field);
       const res = await client.post(endpoint, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -607,19 +626,18 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
     } catch (e: any) {
       const status = e?.response?.status;
       const body = e?.response?.data;
-      console.log(`[RazorAPI] File upload to ${endpoint} failed (${status}):`, body ? JSON.stringify(body) : e?.message);
+      console.log(`[RazorAPI] Upload to ${endpoint} (field: ${field}) failed (${status}):`, body ? JSON.stringify(body) : e?.message);
       continue;
     }
   }
 
-  // Approach 2: JSON body with base64 content (some APIs accept this)
-  const jsonEndpoints = [
-    `/InboundOrder/${orderId}/file`,
-    `/InboundOrder/${orderId}/files`,
-    `/File`,
+  // Approach 2: JSON body with base64 content
+  const jsonAttempts = [
+    `/InboundOrder/${orderId}/attachments`,
+    `/InboundOrder/file-upload/${orderId}`,
   ];
 
-  for (const endpoint of jsonEndpoints) {
+  for (const endpoint of jsonAttempts) {
     try {
       console.log(`[RazorAPI] Trying file upload (JSON base64) to: ${endpoint}`);
       const res = await client.post(endpoint, {
@@ -634,12 +652,12 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
     } catch (e: any) {
       const status = e?.response?.status;
       const body = e?.response?.data;
-      console.log(`[RazorAPI] File upload (JSON) to ${endpoint} failed (${status}):`, body ? JSON.stringify(body) : e?.message);
+      console.log(`[RazorAPI] JSON upload to ${endpoint} failed (${status}):`, body ? JSON.stringify(body) : e?.message);
       continue;
     }
   }
 
-  // All approaches failed — log but don't block the submission
+  // All approaches failed
   console.error(`[RazorAPI] All file upload approaches failed for order ${orderId}. Signature was not uploaded.`);
   throw new Error(`Failed to upload file to order ${orderId} — all endpoint patterns exhausted. Check console logs for individual endpoint errors.`);
 }
