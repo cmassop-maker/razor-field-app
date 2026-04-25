@@ -62,7 +62,7 @@ export default function AssetCaptureScreen() {
     _scanTs?: string;
   }>();
   const orderId = params.orderId;
-  const { dispatch } = useStore();
+  const { state, dispatch } = useStore();
   const colors = useColors();
 
   const [assetType, setAssetType] = useState<AssetType>("Laptop");
@@ -80,6 +80,8 @@ export default function AssetCaptureScreen() {
     if (val && ts && ts !== lastProcessedTs.current) {
       lastProcessedTs.current = ts;
       setSerialNumber(val);
+      // Check for duplicate immediately after scan
+      checkDuplicateSerial(val);
     }
   }, [params.scannedSerial, params._scanTs]);
 
@@ -90,6 +92,7 @@ export default function AssetCaptureScreen() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [savedCount, setSavedCount] = useState(0);
+  const [duplicateWarning, setDuplicateWarning] = useState("");
 
   // Auto-complete state
   const [makeSuggestions, setMakeSuggestions] = useState<string[]>([]);
@@ -110,6 +113,67 @@ export default function AssetCaptureScreen() {
   // Continuous scan mode
   const [continuousScan, setContinuousScan] = useState(false);
 
+  // --- Duplicate serial detection ---
+  // Collect all captured serial numbers across ALL orders
+  const allCapturedSerials = useRef<Map<string, { orderId: number; orderNum: string }>>(new Map());
+
+  useEffect(() => {
+    const map = new Map<string, { orderId: number; orderNum: string }>();
+    for (const order of state.orders) {
+      for (const asset of order.assets) {
+        if (asset.serialNumber) {
+          map.set(asset.serialNumber.toUpperCase(), {
+            orderId: order.razorOrder.id,
+            orderNum: order.razorOrder.autoName || String(order.razorOrder.id),
+          });
+        }
+      }
+    }
+    allCapturedSerials.current = map;
+  }, [state.orders]);
+
+  function checkDuplicateSerial(serial: string): boolean {
+    if (!serial.trim()) {
+      setDuplicateWarning("");
+      return false;
+    }
+    const key = serial.trim().toUpperCase();
+    const existing = allCapturedSerials.current.get(key);
+    if (existing) {
+      const isSameOrder = existing.orderId === Number(orderId);
+      const msg = isSameOrder
+        ? `This serial number has already been captured on this order.`
+        : `This serial number was already captured on Order #${existing.orderNum}.`;
+      setDuplicateWarning(msg);
+
+      // Show alert
+      Alert.alert(
+        "Duplicate Serial Number",
+        `"${serial.trim()}" has already been captured${isSameOrder ? " on this order" : ` on Order #${existing.orderNum}`}.\n\nDo you want to continue anyway?`,
+        [
+          {
+            text: "Clear",
+            style: "destructive",
+            onPress: () => {
+              setSerialNumber("");
+              setDuplicateWarning("");
+            },
+          },
+          {
+            text: "Keep",
+            style: "default",
+            onPress: () => {
+              // Keep the serial, warning stays visible
+            },
+          },
+        ]
+      );
+      return true;
+    }
+    setDuplicateWarning("");
+    return false;
+  }
+
   // Process batch scanned serials from continuous scanner
   useEffect(() => {
     const raw = params.scannedSerials;
@@ -123,6 +187,8 @@ export default function AssetCaptureScreen() {
           setSerialNumber(parsed[0]);
           setQueueIndex(0);
           setContinuousScan(true);
+          // Check first serial for duplicates
+          checkDuplicateSerial(parsed[0]);
         }
       } catch {
         // Invalid JSON, ignore
@@ -212,16 +278,16 @@ export default function AssetCaptureScreen() {
   }
 
   const handleSave = useCallback(() => {
+    if (!serialNumber.trim()) {
+      setError("Serial number is required");
+      return;
+    }
     if (!make.trim()) {
       setError("Make is required");
       return;
     }
     if (!model.trim()) {
       setError("Model is required");
-      return;
-    }
-    if (!serialNumber.trim()) {
-      setError("Serial number is required");
       return;
     }
     setError("");
@@ -252,6 +318,7 @@ export default function AssetCaptureScreen() {
     }
 
     setSavedCount((prev) => prev + 1);
+    setDuplicateWarning("");
 
     if (continuousScan) {
       // Keep make, model, assetType, condition for quick re-entry
@@ -260,6 +327,8 @@ export default function AssetCaptureScreen() {
         const nextIdx = queueIndex + 1;
         setQueueIndex(nextIdx);
         setSerialNumber(serialQueue[nextIdx]);
+        // Check next serial for duplicates
+        checkDuplicateSerial(serialQueue[nextIdx]);
       } else {
         setSerialNumber("");
         setTimeout(() => serialInputRef.current?.focus(), 100);
@@ -412,7 +481,7 @@ export default function AssetCaptureScreen() {
             )}
           </View>
 
-          {/* ========== STEP 1: DEVICE INFO ========== */}
+          {/* ========== STEP 1: SERIAL NUMBER ========== */}
           <View
             className="rounded-xl p-4 mb-4 border"
             style={{
@@ -430,11 +499,190 @@ export default function AssetCaptureScreen() {
                 className="text-base font-bold ml-2"
                 style={{ color: colors.foreground }}
               >
+                Serial Number
+              </Text>
+              {serialQueue.length > 0 && (
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: colors.primary,
+                    fontWeight: "600",
+                    marginLeft: "auto",
+                  }}
+                >
+                  {queueIndex + 1} of {serialQueue.length} scanned
+                </Text>
+              )}
+            </View>
+            <Text className="text-xs text-muted mb-3">
+              Scan the barcode/serial label or type it manually
+            </Text>
+
+            {/* Scan Button - prominent */}
+            <TouchableOpacity
+              style={[
+                styles.scanButton,
+                { backgroundColor: colors.primary },
+              ]}
+              onPress={handleScan}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="qr-code-scanner" size={24} color="#FFFFFF" />
+              <Text style={styles.scanButtonText}>
+                {serialNumber ? "Re-Scan Serial" : "Scan Serial Number"}
+              </Text>
+            </TouchableOpacity>
+
+            {/* Manual Entry */}
+            <View className="flex-row items-center my-3">
+              <View
+                style={{
+                  flex: 1,
+                  height: 1,
+                  backgroundColor: colors.border,
+                }}
+              />
+              <Text
+                className="mx-3 text-xs"
+                style={{ color: colors.muted }}
+              >
+                or enter manually
+              </Text>
+              <View
+                style={{
+                  flex: 1,
+                  height: 1,
+                  backgroundColor: colors.border,
+                }}
+              />
+            </View>
+
+            <TextInput
+              ref={serialInputRef}
+              className="border rounded-xl px-4 py-3.5 text-foreground text-base"
+              style={{
+                backgroundColor: colors.background,
+                borderColor: duplicateWarning
+                  ? colors.warning
+                  : serialNumber
+                    ? colors.success
+                    : colors.border,
+                borderWidth: serialNumber ? 2 : 1,
+              }}
+              value={serialNumber}
+              onChangeText={(text) => {
+                setSerialNumber(text);
+                setDuplicateWarning("");
+              }}
+              onBlur={() => {
+                if (serialNumber.trim()) {
+                  checkDuplicateSerial(serialNumber);
+                }
+              }}
+              placeholder="Type serial number here"
+              placeholderTextColor={colors.muted}
+              autoCapitalize="characters"
+              returnKeyType="done"
+            />
+
+            {/* Serial confirmation or duplicate warning */}
+            {duplicateWarning ? (
+              <View
+                className="flex-row items-start mt-2 p-2.5 rounded-lg"
+                style={{ backgroundColor: colors.warning + "20" }}
+              >
+                <MaterialIcons
+                  name="warning"
+                  size={18}
+                  color={colors.warning}
+                  style={{ marginTop: 1 }}
+                />
+                <Text
+                  className="text-sm ml-2 flex-1"
+                  style={{ color: colors.warning }}
+                >
+                  {duplicateWarning}
+                </Text>
+              </View>
+            ) : serialNumber ? (
+              <View className="flex-row items-center mt-2">
+                <MaterialIcons
+                  name="check-circle"
+                  size={16}
+                  color={colors.success}
+                />
+                <Text
+                  className="text-sm ml-1.5 font-medium"
+                  style={{ color: colors.success }}
+                >
+                  Serial: {serialNumber}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Continuous Scan Toggle */}
+            <TouchableOpacity
+              style={[
+                styles.continuousToggle,
+                {
+                  backgroundColor: continuousScan
+                    ? colors.primary + "15"
+                    : colors.background,
+                  borderColor: continuousScan ? colors.primary : colors.border,
+                  marginTop: 12,
+                },
+              ]}
+              onPress={() => setContinuousScan(!continuousScan)}
+              activeOpacity={0.7}
+            >
+              <MaterialIcons
+                name={continuousScan ? "check-box" : "check-box-outline-blank"}
+                size={22}
+                color={continuousScan ? colors.primary : colors.muted}
+              />
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text
+                  style={[
+                    styles.continuousTitle,
+                    {
+                      color: continuousScan
+                        ? colors.primary
+                        : colors.foreground,
+                    },
+                  ]}
+                >
+                  Continuous Capture Mode
+                </Text>
+                <Text style={{ fontSize: 12, color: colors.muted }}>
+                  After saving, stay on this screen to quickly add more assets
+                </Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* ========== STEP 2: DEVICE INFO ========== */}
+          <View
+            className="rounded-xl p-4 mb-4 border"
+            style={{
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+            }}
+          >
+            <View className="flex-row items-center mb-3">
+              <View
+                style={[styles.stepBadge, { backgroundColor: colors.primary }]}
+              >
+                <Text style={styles.stepBadgeText}>2</Text>
+              </View>
+              <Text
+                className="text-base font-bold ml-2"
+                style={{ color: colors.foreground }}
+              >
                 Device Information
               </Text>
             </View>
             <Text className="text-xs text-muted mb-3">
-              Enter the make, model, and type before scanning the serial number
+              Select the asset type and enter make and model
             </Text>
 
             {/* Asset Type Selector */}
@@ -621,155 +869,6 @@ export default function AssetCaptureScreen() {
                 </View>
               )}
             </View>
-          </View>
-
-          {/* ========== STEP 2: SERIAL NUMBER ========== */}
-          <View
-            className="rounded-xl p-4 mb-4 border"
-            style={{
-              backgroundColor: colors.surface,
-              borderColor: colors.border,
-            }}
-          >
-            <View className="flex-row items-center mb-3">
-              <View
-                style={[styles.stepBadge, { backgroundColor: colors.primary }]}
-              >
-                <Text style={styles.stepBadgeText}>2</Text>
-              </View>
-              <Text
-                className="text-base font-bold ml-2"
-                style={{ color: colors.foreground }}
-              >
-                Serial Number
-              </Text>
-              {serialQueue.length > 0 && (
-                <Text
-                  style={{
-                    fontSize: 12,
-                    color: colors.primary,
-                    fontWeight: "600",
-                    marginLeft: "auto",
-                  }}
-                >
-                  {queueIndex + 1} of {serialQueue.length} scanned
-                </Text>
-              )}
-            </View>
-            <Text className="text-xs text-muted mb-3">
-              Scan the barcode/serial label or type it manually
-            </Text>
-
-            {/* Scan Button - prominent */}
-            <TouchableOpacity
-              style={[
-                styles.scanButton,
-                { backgroundColor: colors.primary },
-              ]}
-              onPress={handleScan}
-              activeOpacity={0.8}
-            >
-              <MaterialIcons name="qr-code-scanner" size={24} color="#FFFFFF" />
-              <Text style={styles.scanButtonText}>
-                {serialNumber ? "Re-Scan Serial" : "Scan Serial Number"}
-              </Text>
-            </TouchableOpacity>
-
-            {/* Manual Entry */}
-            <View className="flex-row items-center my-3">
-              <View
-                style={{
-                  flex: 1,
-                  height: 1,
-                  backgroundColor: colors.border,
-                }}
-              />
-              <Text
-                className="mx-3 text-xs"
-                style={{ color: colors.muted }}
-              >
-                or enter manually
-              </Text>
-              <View
-                style={{
-                  flex: 1,
-                  height: 1,
-                  backgroundColor: colors.border,
-                }}
-              />
-            </View>
-
-            <TextInput
-              ref={serialInputRef}
-              className="border rounded-xl px-4 py-3.5 text-foreground text-base"
-              style={{
-                backgroundColor: colors.background,
-                borderColor: serialNumber ? colors.success : colors.border,
-                borderWidth: serialNumber ? 2 : 1,
-              }}
-              value={serialNumber}
-              onChangeText={setSerialNumber}
-              placeholder="Type serial number here"
-              placeholderTextColor={colors.muted}
-              autoCapitalize="characters"
-              returnKeyType="done"
-              onSubmitEditing={handleSave}
-            />
-
-            {serialNumber ? (
-              <View className="flex-row items-center mt-2">
-                <MaterialIcons
-                  name="check-circle"
-                  size={16}
-                  color={colors.success}
-                />
-                <Text
-                  className="text-sm ml-1.5 font-medium"
-                  style={{ color: colors.success }}
-                >
-                  Serial: {serialNumber}
-                </Text>
-              </View>
-            ) : null}
-
-            {/* Continuous Scan Toggle */}
-            <TouchableOpacity
-              style={[
-                styles.continuousToggle,
-                {
-                  backgroundColor: continuousScan
-                    ? colors.primary + "15"
-                    : colors.background,
-                  borderColor: continuousScan ? colors.primary : colors.border,
-                  marginTop: 12,
-                },
-              ]}
-              onPress={() => setContinuousScan(!continuousScan)}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons
-                name={continuousScan ? "check-box" : "check-box-outline-blank"}
-                size={22}
-                color={continuousScan ? colors.primary : colors.muted}
-              />
-              <View style={{ flex: 1, marginLeft: 8 }}>
-                <Text
-                  style={[
-                    styles.continuousTitle,
-                    {
-                      color: continuousScan
-                        ? colors.primary
-                        : colors.foreground,
-                    },
-                  ]}
-                >
-                  Continuous Capture Mode
-                </Text>
-                <Text style={{ fontSize: 12, color: colors.muted }}>
-                  After saving, stay on this screen to quickly add more assets
-                </Text>
-              </View>
-            </TouchableOpacity>
           </View>
 
           {/* ========== STEP 3: CONDITION & NOTES ========== */}
