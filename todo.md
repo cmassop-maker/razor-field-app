@@ -55,3 +55,4 @@
 - [x] Bug fix: Make, model, and asset type erased when returning from scanner - scanner no longer replaces the screen
 - [x] Bug fix: Signature not saving properly - replaced uuid with generateId, fixed onEnd/onOK timing
 - [x] Bug fix: "Scan Again" link not working - fixed stale closure by using refs for scanned state
+- [x] Reorder asset capture form: Make and Model before Serial Number/Scan (3-step card layout)
