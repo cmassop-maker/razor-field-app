@@ -1,7 +1,8 @@
 // ============================================================
 // Razor ERP API Client — JWT Authentication
 // ============================================================
-import axios, { AxiosInstance } from "axios";
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type {
   RazorInboundOrder,
   CapturedAsset,
@@ -13,6 +14,21 @@ import type {
 
 let client: AxiosInstance | null = null;
 let currentBaseUrl: string = "";
+
+// Token refresh state — prevents concurrent refresh attempts
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+// Callback to notify the store when token is updated (set by store on boot)
+let onTokenRefreshed: ((newToken: string) => void) | null = null;
+
+/**
+ * Register a callback that the store uses to persist the refreshed token.
+ * Called from store.tsx during initialization.
+ */
+export function setTokenRefreshCallback(cb: (newToken: string) => void) {
+  onTokenRefreshed = cb;
+}
 
 /**
  * Resolve the numeric Company ID from a Razor ERP tenant hostname.
@@ -66,6 +82,8 @@ export async function loginWithCredentials(
 
 /**
  * Initialise the reusable Axios client with a JWT access token.
+ * Includes a 401 response interceptor that automatically refreshes the token
+ * and retries the failed request.
  */
 export function initRazorClient(baseUrl: string, accessToken: string) {
   const cleanUrl = baseUrl.replace(/\/+$/, "");
@@ -79,7 +97,123 @@ export function initRazorClient(baseUrl: string, accessToken: string) {
     },
     timeout: 30000,
   });
+
+  // ---- 401 Interceptor: auto-refresh token and retry ----
+  client.interceptors.response.use(
+    (response) => response,
+    async (error: AxiosError) => {
+      const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+      // Only intercept 401 errors, and only retry once per request
+      if (error.response?.status !== 401 || originalRequest._retry || !client) {
+        return Promise.reject(error);
+      }
+
+      originalRequest._retry = true;
+      console.log("[RazorAPI] 401 detected — attempting automatic token refresh...");
+
+      try {
+        // Coalesce concurrent refresh attempts into a single request
+        if (!isRefreshing) {
+          isRefreshing = true;
+          refreshPromise = attemptTokenRefresh();
+        }
+        const newToken = await refreshPromise;
+        isRefreshing = false;
+        refreshPromise = null;
+
+        if (newToken && client) {
+          // Update the default header for future requests
+          client.defaults.headers.Authorization = `Bearer ${newToken}`;
+          // Update this specific request's header and retry
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          console.log("[RazorAPI] Token refreshed successfully — retrying original request");
+          return client(originalRequest);
+        }
+      } catch (refreshError) {
+        isRefreshing = false;
+        refreshPromise = null;
+        console.error("[RazorAPI] Token refresh failed:", refreshError);
+      }
+
+      // If refresh failed, reject with original error
+      return Promise.reject(error);
+    }
+  );
+
   return client;
+}
+
+/**
+ * Attempt to refresh the JWT token.
+ * Strategy 1: Use the /Auth/refresh endpoint (cookie-based).
+ * Strategy 2: Re-authenticate with saved credentials (from Remember Me).
+ * Returns the new access token or null if all strategies fail.
+ */
+async function attemptTokenRefresh(): Promise<string | null> {
+  // Strategy 1: Cookie-based refresh
+  try {
+    console.log("[RazorAPI] Trying /Auth/refresh...");
+    const res = await axios.post<JwtAuthResponse>(
+      `${currentBaseUrl}/api/v1/Auth/refresh`,
+      {},
+      {
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        timeout: 10000,
+        withCredentials: true,
+      }
+    );
+    if (res.data?.accessToken) {
+      console.log("[RazorAPI] Token refreshed via /Auth/refresh");
+      persistNewToken(res.data.accessToken);
+      return res.data.accessToken;
+    }
+  } catch (e: any) {
+    console.log(`[RazorAPI] /Auth/refresh failed (${e?.response?.status}): ${e?.message}`);
+  }
+
+  // Strategy 2: Re-authenticate with saved credentials
+  try {
+    console.log("[RazorAPI] Trying re-authentication with saved credentials...");
+    const savedUrl = await AsyncStorage.getItem("razor_saved_url");
+    const savedUser = await AsyncStorage.getItem("razor_saved_username");
+    const savedPass = await AsyncStorage.getItem("razor_saved_password");
+
+    if (savedUrl && savedUser && savedPass) {
+      const result = await loginWithCredentials(savedUrl, savedUser, savedPass);
+      if (result.accessToken) {
+        console.log("[RazorAPI] Re-authenticated successfully with saved credentials");
+        persistNewToken(result.accessToken);
+        return result.accessToken;
+      }
+    } else {
+      console.log("[RazorAPI] No saved credentials available for re-authentication");
+    }
+  } catch (e: any) {
+    console.error(`[RazorAPI] Re-authentication failed: ${e?.message}`);
+  }
+
+  console.error("[RazorAPI] All token refresh strategies failed");
+  return null;
+}
+
+/**
+ * Persist the new token to secure storage and notify the store.
+ * Also clears lookup caches since they were populated under the old session.
+ */
+function persistNewToken(newToken: string) {
+  // Update the in-memory client
+  if (client) {
+    client.defaults.headers.Authorization = `Bearer ${newToken}`;
+  }
+  // Clear lookup caches so they'll be re-fetched with the new token
+  manufacturersCache = null;
+  categoriesCache = null;
+  itemTypesCache = null;
+  // Notify the store to persist the new token
+  if (onTokenRefreshed) {
+    onTokenRefreshed(newToken);
+  }
 }
 
 /**

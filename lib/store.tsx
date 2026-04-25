@@ -14,7 +14,7 @@ import type {
   RazorInboundOrder,
   SyncQueueItem,
 } from "./types";
-import { initRazorClient, clearRazorClient, signOut } from "./razor-api";
+import { initRazorClient, clearRazorClient, signOut, setTokenRefreshCallback } from "./razor-api";
 
 // ---- Secure storage helpers ----
 async function secureSet(key: string, value: string) {
@@ -259,6 +259,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const creds = await loadCredentials();
       if (creds && creds.accessToken) {
         initRazorClient(creds.baseUrl, creds.accessToken);
+
+        // Register callback so the 401 interceptor can persist refreshed tokens
+        setTokenRefreshCallback(async (newToken: string) => {
+          await secureSet("razor_access_token", newToken);
+          dispatch({
+            type: "SET_API_CONFIG",
+            payload: { ...creds, accessToken: newToken, isConnected: true },
+          });
+          console.log("[Store] Persisted refreshed access token");
+        });
+
         dispatch({
           type: "SET_API_CONFIG",
           payload: { ...creds, isConnected: true },

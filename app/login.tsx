@@ -14,7 +14,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useStore } from "@/lib/store";
-import { loginWithCredentials, initRazorClient } from "@/lib/razor-api";
+import { loginWithCredentials, initRazorClient, setTokenRefreshCallback } from "@/lib/razor-api";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 
@@ -94,6 +94,23 @@ export default function LoginScreen() {
       if (result.accessToken) {
         setStatusText("Authenticated! Loading...");
         initRazorClient(baseUrl, result.accessToken);
+
+        // Register token refresh callback so 401 interceptor can persist new tokens
+        setTokenRefreshCallback(async (newToken: string) => {
+          await saveCredentials(baseUrl, newToken, result.companyId, username.trim());
+          dispatch({
+            type: "SET_API_CONFIG",
+            payload: {
+              baseUrl,
+              accessToken: newToken,
+              companyId: result.companyId,
+              username: username.trim(),
+              isConnected: true,
+            },
+          });
+          console.log("[Login] Persisted refreshed access token");
+        });
+
         await saveCredentials(baseUrl, result.accessToken, result.companyId, username.trim());
 
         // Save or clear Remember Me preferences
