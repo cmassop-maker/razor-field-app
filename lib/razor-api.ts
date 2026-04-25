@@ -495,6 +495,8 @@ export interface RazorLot {
   autoName: string; // e.g. "21502"
   name?: string;
   statusName?: string;
+  workflowStepName?: string;
+  assetWorkflowStep?: string;
   [key: string]: unknown;
 }
 

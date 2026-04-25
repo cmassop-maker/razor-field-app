@@ -45,13 +45,33 @@ export default function OrderSummaryScreen() {
       let failCount = 0;
       const razorOrderId = order.razorOrder.id;
 
-      // Fetch lots for this order to get the correct lotAutoName
+      // Fetch lots for this order — specifically look for an open lot in Tech Depot
       let lotAutoName: string | undefined;
       try {
         const lots = await fetchOrderLots(razorOrderId);
         if (lots.length > 0) {
-          lotAutoName = lots[0].autoName;
-          console.log(`[Submit] Using lot autoName: ${lotAutoName} from order ${razorOrderId}`);
+          // Prefer an open lot in "Tech Depot" workflow step
+          const techDepotLot = lots.find(
+            (l) =>
+              (l.statusName?.toLowerCase() === "open" ||
+               l.statusName?.toLowerCase() === "active" ||
+               !l.statusName) &&
+              (l.workflowStepName?.toLowerCase() === "tech depot" ||
+               l.assetWorkflowStep?.toLowerCase() === "tech depot" ||
+               (l as any).workflowStep?.toLowerCase() === "tech depot")
+          );
+          // Fallback: any open lot, then first lot
+          const openLot = lots.find(
+            (l) =>
+              l.statusName?.toLowerCase() === "open" ||
+              l.statusName?.toLowerCase() === "active" ||
+              !l.statusName
+          );
+          const selectedLot = techDepotLot || openLot || lots[0];
+          lotAutoName = selectedLot.autoName;
+          console.log(
+            `[Submit] Using lot autoName: ${lotAutoName} (status: ${selectedLot.statusName || "unknown"}) from order ${razorOrderId}. Total lots: ${lots.length}`
+          );
         } else {
           console.warn(`[Submit] No lots found for order ${razorOrderId}, will use fallback`);
         }

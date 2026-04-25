@@ -69,3 +69,4 @@
 - [x] Bug fix: lotAutoName must reference existing lot from order, not asset type name (404 error) — now fetches lots from order via API
 - [x] Bug fix: assetWorkflowStep "Inbound" not found (404) — changed to "Tech Depot"
 - [x] Bug fix: Condition "Good" not found in Razor ERP — simplified to "Used" and "New" only
+- [x] Ensure assets are uploaded to an open lot in Tech Depot workflow step on any given order
