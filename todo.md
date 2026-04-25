@@ -74,3 +74,4 @@
 - [x] Bug fix: Signature file upload fails — rewrote with Blob-based FormData + JSON base64 fallback, multiple endpoint patterns
 - [x] Upload PDF report to the Razor ERP Files tab on the order
 - [x] Bug fix: Asset serial number AND manufacturer (make) not transferring to Razor ERP when synced — Swagger docs confirmed correct fields are "manufacturer" and "serial" (not make/mfg/serialNumber/serial#)
+- [x] Show the Razor-assigned UID (autoName) on the PDF report for each asset

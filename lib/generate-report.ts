@@ -51,6 +51,7 @@ function buildReportHtml(order: LocalOrder): string {
       return `
         <tr>
           <td style="text-align:center;">${index + 1}</td>
+          <td style="font-family:monospace;font-size:11px;font-weight:600;color:#1B6B3A;">${asset.razorUid ? escapeHtml(asset.razorUid) : '<span style="color:#999;font-style:italic;">Pending</span>'}</td>
           <td>${escapeHtml(asset.assetType || "Other")}</td>
           <td>${escapeHtml(asset.make)}</td>
           <td>${escapeHtml(asset.model)}</td>
@@ -348,6 +349,7 @@ function buildReportHtml(order: LocalOrder): string {
       <thead>
         <tr>
           <th style="width:30px;">#</th>
+          <th>Razor UID</th>
           <th>Type</th>
           <th>Make</th>
           <th>Model</th>
