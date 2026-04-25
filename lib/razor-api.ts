@@ -10,18 +10,19 @@ let currentBaseUrl: string = "";
 /**
  * Authenticate with Razor ERP using username/password.
  * The baseUrl is the tenant-specific URL (e.g. https://monwire.razorerp.com).
- * POST /api/v1/JwtAuth with { login, password }
+ * POST /api/v1/Auth with { companyId, login, password }
  * Returns the JWT access token on success.
  */
 export async function loginWithCredentials(
   baseUrl: string,
+  companyId: number,
   login: string,
   password: string
 ): Promise<JwtAuthResponse> {
   const cleanUrl = baseUrl.replace(/\/+$/, "");
-  const body: IssueJwtDto = { login, password };
+  const body: IssueJwtDto = { companyId, login, password };
   const res = await axios.post<JwtAuthResponse>(
-    `${cleanUrl}/api/v1/JwtAuth`,
+    `${cleanUrl}/api/v1/Auth`,
     body,
     {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -88,7 +89,7 @@ export async function refreshToken(): Promise<JwtAuthResponse | null> {
   if (!currentBaseUrl) return null;
   try {
     const res = await axios.post<JwtAuthResponse>(
-      `${currentBaseUrl}/api/v1/JwtAuth/refresh`,
+      `${currentBaseUrl}/api/v1/Auth/refresh`,
       {},
       {
         headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -112,7 +113,7 @@ export async function signOut(): Promise<void> {
   if (!currentBaseUrl) return;
   try {
     await axios.post(
-      `${currentBaseUrl}/api/v1/JwtAuth/sign-out`,
+      `${currentBaseUrl}/api/v1/Auth/sign-out`,
       {},
       { timeout: 5000, withCredentials: true }
     );

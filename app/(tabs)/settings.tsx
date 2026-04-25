@@ -60,6 +60,11 @@ export default function SettingsScreen() {
               <Text className="text-sm text-muted" numberOfLines={1}>
                 {state.apiConfig.baseUrl || "Not connected"}
               </Text>
+              {state.apiConfig.companyId ? (
+                <Text className="text-xs text-muted mt-0.5">
+                  Company ID: {state.apiConfig.companyId}
+                </Text>
+              ) : null}
             </View>
           </View>
           <View className="border-t border-border pt-3 mt-1">

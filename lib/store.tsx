@@ -163,7 +163,7 @@ function reducer(state: AppState, action: Action): AppState {
 interface StoreContextValue {
   state: AppState;
   dispatch: React.Dispatch<Action>;
-  saveCredentials: (baseUrl: string, accessToken: string, username: string) => Promise<void>;
+  saveCredentials: (baseUrl: string, accessToken: string, companyId: number, username: string) => Promise<void>;
   loadCredentials: () => Promise<ApiConfig | null>;
   clearCredentials: () => Promise<void>;
   persistOrders: (orders: LocalOrder[]) => Promise<void>;
@@ -176,9 +176,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
 
   const saveCredentials = useCallback(
-    async (baseUrl: string, accessToken: string, username: string) => {
+    async (baseUrl: string, accessToken: string, companyId: number, username: string) => {
       await secureSet("razor_base_url", baseUrl);
       await secureSet("razor_access_token", accessToken);
+      await secureSet("razor_company_id", String(companyId));
       await secureSet("razor_username", username);
     },
     []
@@ -187,11 +188,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const loadCredentials = useCallback(async (): Promise<ApiConfig | null> => {
     const baseUrl = await secureGet("razor_base_url");
     const accessToken = await secureGet("razor_access_token");
+    const companyIdStr = await secureGet("razor_company_id");
     const username = await secureGet("razor_username");
     if (baseUrl && accessToken) {
       return {
         baseUrl,
         accessToken,
+        companyId: companyIdStr ? Number(companyIdStr) : undefined,
         username: username ?? undefined,
         isConnected: false,
       };
@@ -202,6 +205,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const clearCredentials = useCallback(async () => {
     await secureDelete("razor_base_url");
     await secureDelete("razor_access_token");
+    await secureDelete("razor_company_id");
     await secureDelete("razor_username");
     try {
       await signOut();

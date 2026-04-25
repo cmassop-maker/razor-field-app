@@ -30,3 +30,4 @@
 - [x] Update API layer to use tenant-specific subdomain as base URL
 - [x] Pre-fill default company URL and simplify login UX
 - [x] Update store to persist company URL instead of numeric company ID
+- [x] Fix 404 error on login - correct endpoint is /api/v1/Auth with companyId, not /api/v1/JwtAuth
