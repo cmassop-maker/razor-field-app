@@ -794,6 +794,37 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     console.log("[RazorAPI] Creating asset with payload:", JSON.stringify(payload));
     const res = await client.post<RazorAssetResponse>("/Asset", payload);
     console.log("[RazorAPI] Asset created successfully:", JSON.stringify(res.data));
+
+    // Step 4: PATCH the asset to set manufacturer directly.
+    // The POST may not persist the manufacturer field (it may be overridden by ItemMaster).
+    // The AssetPatchDto has a "manufacturer" string field that we can set directly.
+    const assetAutoName = res.data?.autoName;
+    if (asset.make && assetAutoName) {
+      try {
+        console.log(`[RazorAPI] Patching asset ${assetAutoName} with manufacturer="${asset.make}"`);
+        await client.patch(`/Asset/${assetAutoName}`, {
+          manufacturer: asset.make,
+        });
+        console.log(`[RazorAPI] Asset ${assetAutoName} manufacturer patched successfully`);
+      } catch (patchErr: any) {
+        // Try with asset ID if autoName doesn't work
+        const assetId = res.data?.id;
+        if (assetId) {
+          try {
+            console.log(`[RazorAPI] Retrying PATCH with asset id=${assetId}`);
+            await client.patch(`/Asset/${assetId}`, {
+              manufacturer: asset.make,
+            });
+            console.log(`[RazorAPI] Asset id=${assetId} manufacturer patched successfully`);
+          } catch (patchErr2: any) {
+            console.warn(`[RazorAPI] Failed to patch manufacturer on asset: ${patchErr2?.message}`);
+          }
+        } else {
+          console.warn(`[RazorAPI] Failed to patch manufacturer on asset ${assetAutoName}: ${patchErr?.message}`);
+        }
+      }
+    }
+
     return res.data;
   } catch (e: any) {
     const status = e?.response?.status;

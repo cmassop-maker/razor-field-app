@@ -82,3 +82,4 @@
 - [x] Bug fix: Asset UID shows random UUID instead of Razor-assigned autoName (e.g. AST-00032361) — removed uniqueId from payload so Razor auto-generates the UID
 - [x] Bug fix: Asset creation fails with 400 "UniqueId is required" — added uniqueId (UUID) back as required field; autoName is used as display UID
 - [x] Bug fix: MFG still not showing in Razor ERP — manufacturer flows via ItemMaster, not asset payload. Now patches existing ItemMasters with manufacturerId, removed invalid manufacturerId from asset payload, added debug logging for manufacturer lookup
+- [x] Bug fix: MFG still blank — added PATCH /api/v1/Asset/{autoName} with manufacturer string immediately after asset creation (with fallback to asset id)
