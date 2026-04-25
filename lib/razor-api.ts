@@ -546,37 +546,59 @@ export async function lookupAssetBySerial(serialNumber: string) {
 // ---- File Upload (for signatures → Files tab / Add Files) ----
 
 /**
+ * Convert base64 string to a Blob (works on both web and React Native).
+ */
+function base64ToBlob(base64: string, mimeType: string): Blob {
+  const byteChars = atob(base64);
+  const bytes = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    bytes[i] = byteChars.charCodeAt(i);
+  }
+  return new Blob([bytes.buffer as ArrayBuffer], { type: mimeType });
+}
+
+/**
  * Upload a file (e.g. signature PNG) to the Razor ERP Files tab on an inbound order.
- * Tries multiple endpoint patterns since Razor ERP versions vary.
+ * Tries multiple approaches: Blob-based FormData, data-URI FormData, and JSON base64.
  * The file will appear under the "Files" / "Add Files" tab on the order.
  */
 export async function uploadOrderFile(orderId: number, base64Data: string, fileName: string) {
   if (!client) throw new Error("Razor API client not initialized");
 
-  // Build FormData with the base64 image
-  const buildFormData = (fieldName: string) => {
+  // Strip data URI prefix if present
+  const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "");
+
+  // Approach 1: Blob-based FormData (most compatible with REST APIs)
+  const buildBlobFormData = (fieldName: string) => {
     const formData = new FormData();
-    formData.append(fieldName, {
-      uri: `data:image/png;base64,${base64Data}`,
-      name: fileName,
-      type: "image/png",
-    } as any);
+    try {
+      const blob = base64ToBlob(cleanBase64, "image/png");
+      formData.append(fieldName, blob, fileName);
+    } catch {
+      // Fallback: use RN-style object if Blob fails
+      formData.append(fieldName, {
+        uri: `data:image/png;base64,${cleanBase64}`,
+        name: fileName,
+        type: "image/png",
+      } as any);
+    }
     return formData;
   };
 
-  // Try multiple endpoint patterns for file upload to the Files tab
-  const attempts = [
+  // Endpoints to try with multipart/form-data upload
+  const formDataEndpoints = [
     { endpoint: `/InboundOrder/${orderId}/file`, field: "file" },
     { endpoint: `/InboundOrder/${orderId}/files`, field: "file" },
-    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "file" },
     { endpoint: `/InboundOrder/${orderId}/file`, field: "files" },
+    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "file" },
     { endpoint: `/File/inbound-order/${orderId}`, field: "file" },
+    { endpoint: `/File`, field: "file" },
   ];
 
-  for (const { endpoint, field } of attempts) {
+  for (const { endpoint, field } of formDataEndpoints) {
     try {
-      console.log(`[RazorAPI] Trying file upload to: ${endpoint} (field: ${field})`);
-      const formData = buildFormData(field);
+      console.log(`[RazorAPI] Trying file upload (FormData) to: ${endpoint} (field: ${field})`);
+      const formData = buildBlobFormData(field);
       const res = await client.post(endpoint, formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
@@ -586,13 +608,38 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
       const status = e?.response?.status;
       const body = e?.response?.data;
       console.log(`[RazorAPI] File upload to ${endpoint} failed (${status}):`, body ? JSON.stringify(body) : e?.message);
-      // If we get a 400 (bad request) or 422 (validation), try next endpoint
-      // If we get a 404, the endpoint doesn't exist, try next
-      // If we get a 200/201, it would have returned above
       continue;
     }
   }
 
-  // All endpoints failed
-  throw new Error(`Failed to upload file to order ${orderId} — all endpoint patterns exhausted`);
+  // Approach 2: JSON body with base64 content (some APIs accept this)
+  const jsonEndpoints = [
+    `/InboundOrder/${orderId}/file`,
+    `/InboundOrder/${orderId}/files`,
+    `/File`,
+  ];
+
+  for (const endpoint of jsonEndpoints) {
+    try {
+      console.log(`[RazorAPI] Trying file upload (JSON base64) to: ${endpoint}`);
+      const res = await client.post(endpoint, {
+        fileName: fileName,
+        fileContent: cleanBase64,
+        contentType: "image/png",
+        inboundOrderId: orderId,
+        description: "Driver signature",
+      });
+      console.log(`[RazorAPI] File uploaded (JSON) successfully to ${endpoint}:`, JSON.stringify(res.data));
+      return res;
+    } catch (e: any) {
+      const status = e?.response?.status;
+      const body = e?.response?.data;
+      console.log(`[RazorAPI] File upload (JSON) to ${endpoint} failed (${status}):`, body ? JSON.stringify(body) : e?.message);
+      continue;
+    }
+  }
+
+  // All approaches failed — log but don't block the submission
+  console.error(`[RazorAPI] All file upload approaches failed for order ${orderId}. Signature was not uploaded.`);
+  throw new Error(`Failed to upload file to order ${orderId} — all endpoint patterns exhausted. Check console logs for individual endpoint errors.`);
 }
