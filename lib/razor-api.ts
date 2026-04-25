@@ -444,12 +444,21 @@ export async function findManufacturerId(name: string): Promise<number | null> {
   const lower = name.trim().toLowerCase();
   // Try exact match first
   const exact = manufacturers.find((m) => m.name.toLowerCase() === lower);
-  if (exact) return exact.id;
+  if (exact) {
+    console.log(`[RazorAPI] Exact manufacturer match: "${exact.name}" (id=${exact.id})`);
+    return exact.id;
+  }
   // Try partial match (manufacturer name contains the search term or vice versa)
   const partial = manufacturers.find(
     (m) => m.name.toLowerCase().includes(lower) || lower.includes(m.name.toLowerCase())
   );
-  if (partial) return partial.id;
+  if (partial) {
+    console.log(`[RazorAPI] Partial manufacturer match: "${partial.name}" (id=${partial.id}) for search "${name}"`);
+    return partial.id;
+  }
+  // Log available manufacturers for debugging
+  const available = manufacturers.slice(0, 20).map((m) => m.name).join(", ");
+  console.warn(`[RazorAPI] No manufacturer match for "${name}". Available (first 20): ${available}`);
   return null;
 }
 
@@ -661,7 +670,26 @@ export async function createItemMaster(
 }
 
 /**
+ * Patch an existing ItemMaster to update its manufacturerId.
+ * PATCH /api/v1/ItemMaster/{id}
+ */
+async function patchItemMasterManufacturer(
+  itemMasterId: number,
+  manufacturerId: number,
+): Promise<void> {
+  if (!client) return;
+  try {
+    console.log(`[RazorAPI] Patching ItemMaster id=${itemMasterId} with manufacturerId=${manufacturerId}`);
+    await client.patch(`/ItemMaster/${itemMasterId}`, { manufacturerId });
+    console.log(`[RazorAPI] ItemMaster id=${itemMasterId} patched successfully with manufacturerId=${manufacturerId}`);
+  } catch (e: any) {
+    console.warn(`[RazorAPI] Failed to patch ItemMaster id=${itemMasterId}: ${e?.message}`);
+  }
+}
+
+/**
  * Find an existing ItemMaster by model name, or create one if not found.
+ * If found, ensures the manufacturer is set by patching if needed.
  * Returns the itemMasterId to use in asset creation.
  */
 export async function findOrCreateItemMaster(
@@ -672,6 +700,15 @@ export async function findOrCreateItemMaster(
   // Search first
   const existingId = await searchItemMaster(modelName);
   if (existingId !== null) {
+    // Ensure the existing ItemMaster has the manufacturer set.
+    // If the manufacturer was not set when the ItemMaster was originally created,
+    // we patch it now to ensure MFG flows through to assets.
+    if (manufacturer) {
+      const mfrId = await findManufacturerId(manufacturer);
+      if (mfrId) {
+        await patchItemMasterManufacturer(existingId, mfrId);
+      }
+    }
     return existingId;
   }
 
@@ -718,19 +755,9 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     }
   }
 
-  // Step 2: Resolve the manufacturerId for this make.
-  // Razor ERP may require the numeric manufacturerId in addition to the manufacturer string.
-  let manufacturerId: number | null = null;
-  if (asset.make) {
-    try {
-      manufacturerId = await findManufacturerId(asset.make);
-      if (manufacturerId) {
-        console.log(`[RazorAPI] Resolved manufacturerId=${manufacturerId} for make "${asset.make}"`);
-      }
-    } catch (e: any) {
-      console.warn(`[RazorAPI] Could not resolve manufacturerId for "${asset.make}": ${e?.message}`);
-    }
-  }
+  // Step 2: Manufacturer is set via the ItemMaster (not directly on the asset).
+  // The findOrCreateItemMaster function above already handles setting/patching
+  // the manufacturerId on the ItemMaster record.
 
   // Step 3: Build the payload with all required fields per Razor ERP validation:
   // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
@@ -755,10 +782,8 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     payload.itemMasterId = itemMasterId;
   }
 
-  // Include the resolved manufacturerId if we have one
-  if (manufacturerId) {
-    payload.manufacturerId = manufacturerId;
-  }
+  // Note: manufacturerId is NOT in the NewAssetDto schema (per Swagger).
+  // Manufacturer flows through the ItemMaster link, not the asset payload directly.
 
   // Add optional fields if provided
   if (asset.assetTypeName) payload.assetTypeName = asset.assetTypeName;
