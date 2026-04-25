@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "Razor Field",
-    "slug": "razor-field-app",
+    "slug": "razor-field",
+    "owner": "cmassop",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -109,6 +110,11 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9156ae3e-b98b-449c-bd7e-135d7010a83e"
+      }
     }
   }
 }

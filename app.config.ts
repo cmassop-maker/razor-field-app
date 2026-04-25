@@ -29,7 +29,7 @@ const schemeFromBundleId = `manus${timestamp}`;
 const env = {
   // App branding - update these values directly (do not use env vars)
   appName: "Razor Field",
-  appSlug: "razor-field-app",
+  appSlug: "razor-field",
   // S3 URL of the app logo - set this to the URL returned by generate_image when creating custom logo
   // Leave empty to use the default icon from assets/images/icon.png
   logoUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310519663589004498/L7ujTXCgD6HuuPcruvvATZ/icon-j3eGGWVSLzQDJbhckh8nY4.png",
@@ -141,6 +141,12 @@ const config: ExpoConfig = {
     typedRoutes: true,
     reactCompiler: true,
   },
+  extra: {
+    eas: {
+      projectId: "9156ae3e-b98b-449c-bd7e-135d7010a83e",
+    },
+  },
+  owner: "cmassop",
 };
 
 export default config;
