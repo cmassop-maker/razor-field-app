@@ -32,3 +32,8 @@
 - [x] Update store to persist company URL instead of numeric company ID
 - [x] Fix 404 error on login - correct endpoint is /api/v1/Auth with companyId, not /api/v1/JwtAuth
 - [x] Remove Company ID field from login - auto-resolved via /api/v1/company-domain endpoint
+- [x] Add "Remember Me" toggle on login to persist session across app restarts
+- [x] Fetch all orders from Razor ERP (not just a subset)
+- [x] Display full address on each order detail screen
+- [x] Add interactive map with directions to client site on order detail
+- [x] Implement GPS tracking for drivers (live location, route tracking, stats)

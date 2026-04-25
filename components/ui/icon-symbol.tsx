@@ -1,9 +1,10 @@
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
-import { SymbolWeight, SymbolViewProps } from "expo-symbols";
+import { SymbolWeight } from "expo-symbols";
 import { ComponentProps } from "react";
 import { OpaqueColorValue, type StyleProp, type TextStyle } from "react-native";
 
-type IconMapping = Record<SymbolViewProps["name"], ComponentProps<typeof MaterialIcons>["name"]>;
+type MaterialIconName = ComponentProps<typeof MaterialIcons>["name"];
+type IconMapping = Record<string, MaterialIconName>;
 type IconSymbolName = keyof typeof MAPPING;
 
 const MAPPING = {
@@ -39,7 +40,10 @@ const MAPPING = {
   "square.and.pencil": "edit-note",
   "tray.full.fill": "inventory",
   "shippingbox.fill": "local-shipping",
-} as IconMapping;
+  "location.circle.fill": "my-location",
+  "map.fill": "map",
+  "navigation.fill": "navigation",
+} satisfies IconMapping;
 
 export function IconSymbol({
   name,

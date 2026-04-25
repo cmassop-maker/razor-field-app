@@ -64,7 +64,7 @@ const config: ExpoConfig = {
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
-    permissions: ["POST_NOTIFICATIONS", "CAMERA"],
+    permissions: ["POST_NOTIFICATIONS", "CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_LOCATION"],
     intentFilters: [
       {
         action: "VIEW",
@@ -115,6 +115,16 @@ const config: ExpoConfig = {
         dark: {
           backgroundColor: "#000000",
         },
+      },
+    ],
+    [
+      "expo-location",
+      {
+        locationAlwaysAndWhenInUsePermission: "Allow $(PRODUCT_NAME) to track your location for delivery routes.",
+        locationWhenInUsePermission: "Allow $(PRODUCT_NAME) to access your location for navigation.",
+        isIosBackgroundLocationEnabled: true,
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
       },
     ],
     [

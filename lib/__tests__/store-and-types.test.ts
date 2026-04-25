@@ -175,6 +175,7 @@ describe("Razor API Module", () => {
     expect(typeof api.createAsset).toBe("function");
     expect(typeof api.lookupAssetBySerial).toBe("function");
     expect(typeof api.uploadOrderFile).toBe("function");
+    expect(typeof api.geocodeAddress).toBe("function");
   });
 
   it("should return null client before initialization", async () => {
@@ -202,5 +203,12 @@ describe("Razor API Module", () => {
     api.clearRazorClient();
     const result = await api.testConnection();
     expect(result).toBe(false);
+  });
+
+  it("should return null for refreshToken without base URL", async () => {
+    const api = await import("../razor-api");
+    api.clearRazorClient();
+    const result = await api.refreshToken();
+    expect(result).toBeNull();
   });
 });

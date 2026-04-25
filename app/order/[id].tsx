@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useState, useEffect } from "react";
 import {
   Text,
   View,
@@ -7,11 +7,15 @@ import {
   StyleSheet,
   Alert,
   Platform,
+  Linking,
+  ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useStore } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
+import { geocodeAddress } from "@/lib/razor-api";
+import NativeMap from "@/components/native-map";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import type { CapturedAsset } from "@/lib/types";
 
@@ -80,10 +84,56 @@ export default function OrderDetailScreen() {
   const { state, dispatch } = useStore();
   const colors = useColors();
 
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [geocoding, setGeocoding] = useState(false);
+
   const order = useMemo(
     () => state.orders.find((o) => String(o.razorOrder.id) === id),
     [state.orders, id]
   );
+
+  // Build full address string
+  const fullAddress = useMemo(() => {
+    if (!order) return "";
+    const ro = order.razorOrder;
+    const parts = [ro.locationAddress, ro.locationCity, ro.locationState, ro.locationZip].filter(Boolean);
+    return parts.join(", ");
+  }, [order]);
+
+  // Geocode the address
+  useEffect(() => {
+    if (!fullAddress) return;
+    let cancelled = false;
+    setGeocoding(true);
+    geocodeAddress(fullAddress).then((result) => {
+      if (!cancelled) {
+        setCoords(result);
+        setGeocoding(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [fullAddress]);
+
+  /** Open native maps app for navigation */
+  const openNavigation = useCallback(() => {
+    if (!fullAddress && !coords) return;
+    const destination = coords
+      ? `${coords.latitude},${coords.longitude}`
+      : encodeURIComponent(fullAddress);
+    if (Platform.OS === "ios") {
+      Linking.openURL(`maps://app?daddr=${destination}`).catch(() =>
+        Linking.openURL(`https://maps.apple.com/?daddr=${destination}`)
+      );
+    } else if (Platform.OS === "android") {
+      Linking.openURL(`google.navigation:q=${destination}`).catch(() =>
+        Linking.openURL(`https://www.google.com/maps/dir/?api=1&destination=${destination}`)
+      );
+    } else {
+      Linking.openURL(
+        `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(fullAddress)}`
+      );
+    }
+  }, [fullAddress, coords]);
 
   const handleDeleteAsset = useCallback(
     (localId: string) => {
@@ -154,42 +204,83 @@ export default function OrderDetailScreen() {
         contentContainerStyle={{ padding: 16, paddingBottom: 120 }}
         ListHeaderComponent={
           <View>
-            {/* Location Info */}
-            {(ro.locationAddress || ro.contactName) && (
-              <View
-                className="bg-surface border border-border rounded-2xl p-4 mb-4"
-              >
-                <Text className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">
-                  Pickup Location
-                </Text>
-                {ro.locationAddress && (
-                  <View className="flex-row items-start gap-2 mb-2">
-                    <MaterialIcons name="location-on" size={16} color={colors.primary} style={{ marginTop: 2 }} />
-                    <Text className="text-sm text-foreground flex-1">
-                      {ro.locationAddress}
-                      {ro.locationCity ? `, ${ro.locationCity}` : ""}
-                      {ro.locationState ? `, ${ro.locationState}` : ""}
-                      {ro.locationZip ? ` ${ro.locationZip}` : ""}
-                    </Text>
+            {/* Map & Address Card */}
+            {fullAddress ? (
+              <View className="bg-surface border border-border rounded-2xl overflow-hidden mb-4">
+                {/* Map */}
+                {coords ? (
+                  <View style={{ height: 180, width: "100%" }}>
+                    <NativeMap
+                      initialRegion={{
+                        ...coords,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01,
+                      }}
+                      coordinates={[coords]}
+                      markerTitle={ro.customerName || "Pickup"}
+                      scrollEnabled={false}
+                      zoomEnabled={false}
+                    />
                   </View>
-                )}
+                ) : geocoding ? (
+                  <View style={{ height: 120, justifyContent: "center", alignItems: "center" }}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Text className="text-xs text-muted mt-2">Loading map...</Text>
+                  </View>
+                ) : null}
+
+                {/* Address & Navigate Button */}
+                <View className="p-4">
+                  <Text className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">
+                    Pickup Location
+                  </Text>
+                  <View className="flex-row items-start gap-2 mb-3">
+                    <MaterialIcons name="location-on" size={16} color={colors.primary} style={{ marginTop: 2 }} />
+                    <Text className="text-sm text-foreground flex-1">{fullAddress}</Text>
+                  </View>
+
+                  {/* Navigate Button */}
+                  <TouchableOpacity
+                    style={[styles.navigateBtn, { backgroundColor: colors.primary }]}
+                    onPress={openNavigation}
+                    activeOpacity={0.8}
+                  >
+                    <MaterialIcons name="navigation" size={18} color="#FFFFFF" />
+                    <Text style={styles.navigateBtnText}>Navigate</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
+
+            {/* Contact Info */}
+            {(ro.contactName || ro.contactPhone || ro.contactEmail) && (
+              <View className="bg-surface border border-border rounded-2xl p-4 mb-4">
+                <Text className="text-xs font-semibold text-muted uppercase tracking-wider mb-3">
+                  Contact
+                </Text>
                 {ro.contactName && (
-                  <View className="flex-row items-center gap-2 mb-1">
+                  <View className="flex-row items-center gap-2 mb-2">
                     <MaterialIcons name="person" size={16} color={colors.muted} />
                     <Text className="text-sm text-foreground">{ro.contactName}</Text>
                   </View>
                 )}
                 {ro.contactPhone && (
-                  <View className="flex-row items-center gap-2 mb-1">
-                    <MaterialIcons name="phone" size={16} color={colors.muted} />
-                    <Text className="text-sm text-foreground">{ro.contactPhone}</Text>
-                  </View>
+                  <TouchableOpacity
+                    className="flex-row items-center gap-2 mb-2"
+                    onPress={() => Linking.openURL(`tel:${ro.contactPhone}`)}
+                  >
+                    <MaterialIcons name="phone" size={16} color={colors.primary} />
+                    <Text className="text-sm" style={{ color: colors.primary }}>{ro.contactPhone}</Text>
+                  </TouchableOpacity>
                 )}
                 {ro.contactEmail && (
-                  <View className="flex-row items-center gap-2">
-                    <MaterialIcons name="email" size={16} color={colors.muted} />
-                    <Text className="text-sm text-foreground">{ro.contactEmail}</Text>
-                  </View>
+                  <TouchableOpacity
+                    className="flex-row items-center gap-2"
+                    onPress={() => Linking.openURL(`mailto:${ro.contactEmail}`)}
+                  >
+                    <MaterialIcons name="email" size={16} color={colors.primary} />
+                    <Text className="text-sm" style={{ color: colors.primary }}>{ro.contactEmail}</Text>
+                  </TouchableOpacity>
                 )}
               </View>
             )}
@@ -313,5 +404,18 @@ const styles = StyleSheet.create({
   assetNote: {
     fontSize: 12,
     flex: 1,
+  },
+  navigateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  navigateBtnText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 15,
   },
 });

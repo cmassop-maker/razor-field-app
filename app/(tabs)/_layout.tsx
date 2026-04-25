@@ -52,6 +52,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="tracking"
+        options={{
+          title: "Tracking",
+          tabBarIcon: ({ color }) => (
+            <IconSymbol size={28} name="location.circle.fill" color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="settings"
         options={{
           title: "Settings",

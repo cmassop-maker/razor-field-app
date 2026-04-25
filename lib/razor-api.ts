@@ -151,16 +151,68 @@ export async function signOut(): Promise<void> {
 
 // ---- Inbound Orders ----
 
+/**
+ * Fetch ALL inbound orders from Razor ERP.
+ * Uses pagination to ensure every order is retrieved.
+ */
 export async function fetchInboundOrders(): Promise<RazorInboundOrder[]> {
   if (!client) throw new Error("Razor API client not initialized");
+  const allOrders: RazorInboundOrder[] = [];
+  let page = 1;
+  const pageSize = 100;
   try {
+    // First try the /all endpoint (returns everything)
     const res = await client.get("/InboundOrder/all");
     const data = res.data;
     const orders: RazorInboundOrder[] = Array.isArray(data) ? data : data?.items ?? data?.data ?? [];
-    return orders;
+    if (orders.length > 0) return orders;
+  } catch {
+    // Fall through to paginated approach
+  }
+  // Paginated fallback
+  try {
+    while (true) {
+      const res = await client.get("/InboundOrder", {
+        params: { page, pageSize },
+      });
+      const data = res.data;
+      const items: RazorInboundOrder[] = Array.isArray(data)
+        ? data
+        : data?.items ?? data?.data ?? [];
+      allOrders.push(...items);
+      if (items.length < pageSize) break;
+      page++;
+      if (page > 50) break; // safety limit
+    }
   } catch (error: any) {
+    if (allOrders.length > 0) return allOrders;
     console.error("Failed to fetch orders:", error?.message);
     throw error;
+  }
+  return allOrders;
+}
+
+/**
+ * Geocode an address string to lat/lng coordinates using Nominatim (free, no API key).
+ */
+export async function geocodeAddress(
+  address: string
+): Promise<{ latitude: number; longitude: number } | null> {
+  try {
+    const res = await axios.get("https://nominatim.openstreetmap.org/search", {
+      params: { q: address, format: "json", limit: 1 },
+      headers: { "User-Agent": "RazorFieldApp/1.0" },
+      timeout: 10000,
+    });
+    if (res.data && res.data.length > 0) {
+      return {
+        latitude: parseFloat(res.data[0].lat),
+        longitude: parseFloat(res.data[0].lon),
+      };
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
