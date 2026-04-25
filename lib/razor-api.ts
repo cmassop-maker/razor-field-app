@@ -558,24 +558,36 @@ function base64ToBlob(base64: string, mimeType: string): Blob {
 }
 
 /**
- * Upload a file (e.g. signature PNG) to the Razor ERP Files tab on an inbound order.
+ * Upload a file (e.g. signature PNG or PDF report) to the Razor ERP Files tab on an inbound order.
  * Confirmed endpoints from API probing:
  *   - /InboundOrder/{id}/attachments (401 = exists, needs auth)
  *   - /InboundOrder/file-upload/{id} (405 = exists, needs POST)
+ *
+ * @param orderId - The Razor ERP inbound order ID
+ * @param base64Data - Base64-encoded file content (may include data URI prefix for images)
+ * @param fileName - The filename to use when uploading
+ * @param mimeType - The MIME type of the file (default: "image/png")
+ * @param description - Optional description for JSON-based upload attempts
  */
-export async function uploadOrderFile(orderId: number, base64Data: string, fileName: string) {
+export async function uploadOrderFile(
+  orderId: number,
+  base64Data: string,
+  fileName: string,
+  mimeType: string = "image/png",
+  description: string = "Driver signature",
+) {
   if (!client) throw new Error("Razor API client not initialized");
 
-  // Strip data URI prefix if present
-  const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, "");
+  // Strip data URI prefix if present (handles both image and application types)
+  const cleanBase64 = base64Data.replace(/^data:[^;]+;base64,/, "");
 
   // Build FormData with RN-style file object (works in React Native)
   const buildRNFormData = (fieldName: string) => {
     const formData = new FormData();
     formData.append(fieldName, {
-      uri: `data:image/png;base64,${cleanBase64}`,
+      uri: `data:${mimeType};base64,${cleanBase64}`,
       name: fileName,
-      type: "image/png",
+      type: mimeType,
     } as any);
     return formData;
   };
@@ -584,14 +596,14 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
   const buildBlobFormData = (fieldName: string) => {
     const formData = new FormData();
     try {
-      const blob = base64ToBlob(cleanBase64, "image/png");
+      const blob = base64ToBlob(cleanBase64, mimeType);
       formData.append(fieldName, blob, fileName);
     } catch {
       // Fallback to RN-style
       formData.append(fieldName, {
-        uri: `data:image/png;base64,${cleanBase64}`,
+        uri: `data:${mimeType};base64,${cleanBase64}`,
         name: fileName,
-        type: "image/png",
+        type: mimeType,
       } as any);
     }
     return formData;
@@ -643,9 +655,9 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
       const res = await client.post(endpoint, {
         fileName: fileName,
         fileContent: cleanBase64,
-        contentType: "image/png",
+        contentType: mimeType,
         inboundOrderId: orderId,
-        description: "Driver signature",
+        description: description,
       });
       console.log(`[RazorAPI] File uploaded (JSON) successfully to ${endpoint}:`, JSON.stringify(res.data));
       return res;
@@ -658,6 +670,25 @@ export async function uploadOrderFile(orderId: number, base64Data: string, fileN
   }
 
   // All approaches failed
-  console.error(`[RazorAPI] All file upload approaches failed for order ${orderId}. Signature was not uploaded.`);
+  console.error(`[RazorAPI] All file upload approaches failed for order ${orderId}. File was not uploaded.`);
   throw new Error(`Failed to upload file to order ${orderId} — all endpoint patterns exhausted. Check console logs for individual endpoint errors.`);
+}
+
+/**
+ * Upload a PDF report to the Razor ERP Files tab on an inbound order.
+ * This is a convenience wrapper around uploadOrderFile with PDF-specific defaults.
+ */
+export async function uploadPdfToOrder(
+  orderId: number,
+  base64Pdf: string,
+  fileName: string,
+): Promise<any> {
+  console.log(`[RazorAPI] Uploading PDF report "${fileName}" to order ${orderId}`);
+  return uploadOrderFile(
+    orderId,
+    base64Pdf,
+    fileName,
+    "application/pdf",
+    "Field pickup report",
+  );
 }

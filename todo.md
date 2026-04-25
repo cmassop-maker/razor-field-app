@@ -72,3 +72,4 @@
 - [x] Ensure assets are uploaded to an open lot in Tech Depot workflow step on any given order
 - [x] Upload signature as a file to the Razor ERP Files tab (Add Files) on the order
 - [x] Bug fix: Signature file upload fails — rewrote with Blob-based FormData + JSON base64 fallback, multiple endpoint patterns
+- [x] Upload PDF report to the Razor ERP Files tab on the order

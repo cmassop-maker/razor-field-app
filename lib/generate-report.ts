@@ -1,5 +1,6 @@
 import * as Print from "expo-print";
 import { shareAsync } from "expo-sharing";
+import * as FileSystem from "expo-file-system/legacy";
 import { Platform } from "react-native";
 import type { LocalOrder, CapturedAsset } from "./types";
 
@@ -62,7 +63,7 @@ function buildReportHtml(order: LocalOrder): string {
             <span style="color:#666;">${gpsInfo}</span>
             ${gpsAddress ? `<br/><span style="color:#888;font-size:9px;">${escapeHtml(gpsAddress)}</span>` : ""}
           </td>
-          <td style="font-size:10px;">${escapeHtml(asset.notes || "—")}</td>
+          <td style="font-size:10px;">${escapeHtml(asset.notes || "\u2014")}</td>
         </tr>`;
     })
     .join("");
@@ -428,4 +429,36 @@ export async function generateAndShareReport(order: LocalOrder): Promise<string>
 export async function printReport(order: LocalOrder): Promise<void> {
   const html = buildReportHtml(order);
   await Print.printAsync({ html });
+}
+
+/**
+ * Generate a PDF report and return its base64 content and a filename.
+ * Used for uploading to Razor ERP Files tab.
+ */
+export async function generatePdfForUpload(order: LocalOrder): Promise<{
+  base64: string;
+  fileName: string;
+}> {
+  const html = buildReportHtml(order);
+  const orderName = order.razorOrder.autoName || `Order-${order.razorOrder.id}`;
+  const safeFileName = orderName.replace(/[^a-zA-Z0-9-_]/g, "_");
+  const fileName = `report_${safeFileName}_${Date.now()}.pdf`;
+
+  if (Platform.OS === "web") {
+    // On web, we cannot easily generate a file URI, so throw
+    throw new Error("PDF upload to Razor ERP is not supported on web. Use a mobile device.");
+  }
+
+  // Generate the PDF file
+  const { uri } = await Print.printToFileAsync({
+    html,
+    base64: false,
+  });
+
+  // Read the PDF file as base64
+  const base64Content = await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return { base64: base64Content, fileName };
 }

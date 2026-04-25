@@ -198,6 +198,7 @@ describe("Razor API Module", () => {
     expect(typeof api.createAsset).toBe("function");
     expect(typeof api.lookupAssetBySerial).toBe("function");
     expect(typeof api.uploadOrderFile).toBe("function");
+    expect(typeof api.uploadPdfToOrder).toBe("function");
     expect(typeof api.geocodeAddress).toBe("function");
   });
 

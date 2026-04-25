@@ -16,9 +16,9 @@ import { useStore } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
-import { createAsset, uploadOrderFile, updateOrderNotes, linkAssetToOrder, fetchOrderLots } from "@/lib/razor-api";
+import { createAsset, uploadOrderFile, uploadPdfToOrder, updateOrderNotes, linkAssetToOrder, fetchOrderLots } from "@/lib/razor-api";
 import type { CapturedAsset } from "@/lib/types";
-import { generateAndShareReport, printReport } from "@/lib/generate-report";
+import { generateAndShareReport, printReport, generatePdfForUpload } from "@/lib/generate-report";
 
 export default function OrderSummaryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -161,6 +161,18 @@ export default function OrderSummaryScreen() {
         }
       }
 
+      // Upload PDF report to Razor ERP Files tab
+      try {
+        console.log("[Submit] Generating PDF report for upload to Razor ERP...");
+        const { base64, fileName } = await generatePdfForUpload(order);
+        console.log(`[Submit] PDF generated: ${fileName} (${Math.round(base64.length * 0.75 / 1024)} KB)`);
+        await uploadPdfToOrder(razorOrderId, base64, fileName);
+        console.log("[Submit] PDF report uploaded successfully to Razor ERP Files tab");
+      } catch (e: any) {
+        // PDF upload failure is non-critical — log but don't count as a fail
+        console.warn("[Submit] PDF report upload failed (non-critical):", e?.message || e);
+      }
+
       // Update order status
       if (failCount === 0) {
         dispatch({
@@ -189,7 +201,7 @@ export default function OrderSummaryScreen() {
     } else {
       Alert.alert(
         "Submit to Razor ERP",
-        `This will submit ${order.assets.length} asset${order.assets.length !== 1 ? "s" : ""}${order.signature ? " and the collected signature" : ""} to Razor ERP.\n\nEach asset will be assigned a Razor UID.`,
+        `This will submit ${order.assets.length} asset${order.assets.length !== 1 ? "s" : ""}${order.signature ? " and the collected signature" : ""} to Razor ERP.\n\nEach asset will be assigned a Razor UID.\nA PDF report will also be uploaded to the Files tab.`,
         [
           { text: "Cancel", style: "cancel" },
           { text: "Submit", onPress: doSubmit },
@@ -307,7 +319,7 @@ export default function OrderSummaryScreen() {
                   )}
                   <Text className="text-sm text-foreground">
                     {order.signature.signerName}
-                    {order.signature.signerTitle ? ` — ${order.signature.signerTitle}` : ""}
+                    {order.signature.signerTitle ? ` \u2014 ${order.signature.signerTitle}` : ""}
                   </Text>
                 </View>
               ) : (
