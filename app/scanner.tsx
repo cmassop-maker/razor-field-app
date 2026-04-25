@@ -31,10 +31,14 @@ export default function ScannerScreen() {
   }>();
   const isContinuous = continuousParam === "true";
   const colors = useColors();
+
+  // Use state for rendering, ref for callback access (avoids stale closure)
   const [scanned, setScanned] = useState(false);
+  const scannedRef = useRef(false);
   const [scannedValue, setScannedValue] = useState("");
   const [manualValue, setManualValue] = useState("");
   const [scannedList, setScannedList] = useState<string[]>([]);
+  const scannedListRef = useRef<string[]>([]);
   const lastScannedRef = useRef<string>("");
   const scanCooldownRef = useRef(false);
 
@@ -52,11 +56,15 @@ export default function ScannerScreen() {
         // In continuous mode, auto-add unique serials with a cooldown
         if (scanCooldownRef.current) return;
         if (trimmed === lastScannedRef.current) return;
-        if (scannedList.includes(trimmed)) return;
+        if (scannedListRef.current.includes(trimmed)) return;
 
         scanCooldownRef.current = true;
         lastScannedRef.current = trimmed;
-        setScannedList((prev) => [...prev, trimmed]);
+        setScannedList((prev) => {
+          const next = [...prev, trimmed];
+          scannedListRef.current = next;
+          return next;
+        });
 
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -67,8 +75,9 @@ export default function ScannerScreen() {
           scanCooldownRef.current = false;
         }, 1500);
       } else {
-        // Single scan mode
-        if (scanned) return;
+        // Single scan mode — use ref to check, avoids stale closure
+        if (scannedRef.current) return;
+        scannedRef.current = true;
         setScanned(true);
         setScannedValue(trimmed);
         if (Platform.OS !== "web") {
@@ -76,13 +85,10 @@ export default function ScannerScreen() {
         }
       }
     },
-    [isContinuous, scanned, scannedList]
+    [isContinuous]
   );
 
   function handleUseValue(value: string) {
-    // Navigate back to the asset-capture screen that pushed us,
-    // passing the scanned serial via navigation params.
-    // Using router.navigate preserves the previous screen's state.
     router.navigate({
       pathname: "/asset-capture",
       params: { orderId, scannedSerial: value.trim(), _scanTs: Date.now().toString() },
@@ -90,7 +96,6 @@ export default function ScannerScreen() {
   }
 
   function handleUseContinuousValues() {
-    // Return the list of scanned serials as a JSON array
     router.navigate({
       pathname: "/asset-capture",
       params: {
@@ -102,13 +107,19 @@ export default function ScannerScreen() {
   }
 
   function handleScanAgain() {
+    // Reset both state and ref so the callback allows new scans
+    scannedRef.current = false;
     setScanned(false);
     setScannedValue("");
     lastScannedRef.current = "";
   }
 
   function removeFromList(serial: string) {
-    setScannedList((prev) => prev.filter((s) => s !== serial));
+    setScannedList((prev) => {
+      const next = prev.filter((s) => s !== serial);
+      scannedListRef.current = next;
+      return next;
+    });
     if (lastScannedRef.current === serial) {
       lastScannedRef.current = "";
     }
@@ -221,10 +232,13 @@ export default function ScannerScreen() {
           >
             <Text style={styles.useButtonText}>Use This Serial Number</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={{ marginTop: 16 }} onPress={handleScanAgain}>
-            <Text style={{ color: "#FFFFFF", textDecorationLine: "underline" }}>
-              Scan Again
-            </Text>
+          <TouchableOpacity
+            style={styles.scanAgainButton}
+            onPress={handleScanAgain}
+            activeOpacity={0.7}
+          >
+            <MaterialIcons name="qr-code-scanner" size={18} color="#FFFFFF" />
+            <Text style={styles.scanAgainText}>Scan Again</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -253,9 +267,7 @@ export default function ScannerScreen() {
             "pdf417",
           ],
         }}
-        onBarcodeScanned={
-          !isContinuous && scanned ? undefined : handleBarcodeScanned
-        }
+        onBarcodeScanned={handleBarcodeScanned}
       />
 
       {/* Overlay */}
@@ -350,9 +362,7 @@ export default function ScannerScreen() {
             </Text>
             <TouchableOpacity
               style={[styles.manualButton, { borderColor: "#FFFFFF" }]}
-              onPress={() => {
-                router.back();
-              }}
+              onPress={() => router.back()}
             >
               <MaterialIcons name="keyboard" size={18} color="#FFFFFF" />
               <Text
@@ -452,6 +462,22 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
     textAlign: "center",
+  },
+  scanAgainButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+    gap: 8,
+  },
+  scanAgainText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+    fontSize: 15,
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
