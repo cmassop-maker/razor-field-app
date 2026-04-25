@@ -73,7 +73,6 @@ export interface LocalOrder {
 export interface ApiConfig {
   baseUrl: string;
   accessToken: string;
-  companyId?: number;
   username?: string;
   isConnected: boolean;
 }
@@ -86,7 +85,7 @@ export interface JwtAuthResponse {
 
 /** Request body for POST /api/v1/JwtAuth */
 export interface IssueJwtDto {
-  companyId: number;
+  companyId?: number;
   login: string;
   password: string;
 }

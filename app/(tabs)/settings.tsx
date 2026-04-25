@@ -57,8 +57,8 @@ export default function SettingsScreen() {
               <Text className="text-base font-semibold text-foreground">
                 {state.apiConfig.username || "Unknown User"}
               </Text>
-              <Text className="text-sm text-muted">
-                Company ID: {state.apiConfig.companyId ?? "N/A"}
+              <Text className="text-sm text-muted" numberOfLines={1}>
+                {state.apiConfig.baseUrl || "Not connected"}
               </Text>
             </View>
           </View>

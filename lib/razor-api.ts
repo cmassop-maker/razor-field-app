@@ -9,19 +9,20 @@ let currentBaseUrl: string = "";
 
 /**
  * Authenticate with Razor ERP using username/password.
- * POST /api/v1/JwtAuth with { companyId, login, password }
+ * The baseUrl is the tenant-specific URL (e.g. https://monwire.razorerp.com).
+ * POST /api/v1/JwtAuth with { login, password }
  * Returns the JWT access token on success.
  */
 export async function loginWithCredentials(
   baseUrl: string,
-  companyId: number,
   login: string,
   password: string
 ): Promise<JwtAuthResponse> {
   const cleanUrl = baseUrl.replace(/\/+$/, "");
+  const body: IssueJwtDto = { login, password };
   const res = await axios.post<JwtAuthResponse>(
     `${cleanUrl}/api/v1/JwtAuth`,
-    { companyId, login, password } satisfies IssueJwtDto,
+    body,
     {
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       timeout: 15000,

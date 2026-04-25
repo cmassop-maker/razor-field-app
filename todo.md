@@ -26,3 +26,7 @@
 - [x] Add token refresh logic using /api/v1/JwtAuth/refresh
 - [x] Update settings screen to show logged-in user info
 - [x] Update store to manage JWT tokens instead of API key
+- [x] Replace Company ID field with Company URL field (e.g. https://monwire.razorerp.com)
+- [x] Update API layer to use tenant-specific subdomain as base URL
+- [x] Pre-fill default company URL and simplify login UX
+- [x] Update store to persist company URL instead of numeric company ID

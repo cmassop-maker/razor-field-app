@@ -111,15 +111,13 @@ describe("Domain Types", () => {
 
   it("should create a valid ApiConfig with JWT fields", () => {
     const config: ApiConfig = {
-      baseUrl: "https://apiprod.razorerp.com",
+      baseUrl: "https://monwire.razorerp.com",
       accessToken: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.test",
-      companyId: 42,
       username: "driver1",
       isConnected: true,
     };
-    expect(config.baseUrl).toBe("https://apiprod.razorerp.com");
+    expect(config.baseUrl).toBe("https://monwire.razorerp.com");
     expect(config.accessToken).toContain("eyJ");
-    expect(config.companyId).toBe(42);
     expect(config.username).toBe("driver1");
     expect(config.isConnected).toBe(true);
   });

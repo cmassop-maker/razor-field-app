@@ -20,45 +20,46 @@ export default function LoginScreen() {
   const { dispatch, saveCredentials } = useStore();
   const colors = useColors();
 
-  const [baseUrl, setBaseUrl] = useState("https://apiprod.razorerp.com");
-  const [companyId, setCompanyId] = useState("");
+  const [companyUrl, setCompanyUrl] = useState("https://monwire.razorerp.com");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const usernameRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
+  /** Normalize the company URL to ensure it has the https:// prefix */
+  function normalizeUrl(url: string): string {
+    let cleaned = url.trim().replace(/\/+$/, "");
+    if (!cleaned.startsWith("http://") && !cleaned.startsWith("https://")) {
+      cleaned = `https://${cleaned}`;
+    }
+    return cleaned;
+  }
+
   async function handleLogin() {
-    if (!companyId.trim() || !username.trim() || !password.trim()) {
-      setError("Please enter your Company ID, username, and password.");
+    if (!companyUrl.trim() || !username.trim() || !password.trim()) {
+      setError("Please enter your Razor ERP URL, username, and password.");
       return;
     }
-    const parsedCompanyId = parseInt(companyId.trim(), 10);
-    if (isNaN(parsedCompanyId)) {
-      setError("Company ID must be a number.");
-      return;
-    }
+    const baseUrl = normalizeUrl(companyUrl);
     setError("");
     setIsConnecting(true);
     try {
       const result = await loginWithCredentials(
-        baseUrl.trim(),
-        parsedCompanyId,
+        baseUrl,
         username.trim(),
         password.trim()
       );
       if (result.accessToken) {
-        initRazorClient(baseUrl.trim(), result.accessToken);
-        await saveCredentials(baseUrl.trim(), result.accessToken, parsedCompanyId, username.trim());
+        initRazorClient(baseUrl, result.accessToken);
+        await saveCredentials(baseUrl, result.accessToken, username.trim());
         dispatch({
           type: "SET_API_CONFIG",
           payload: {
-            baseUrl: baseUrl.trim(),
+            baseUrl,
             accessToken: result.accessToken,
-            companyId: parsedCompanyId,
             username: username.trim(),
             isConnected: true,
           },
@@ -71,7 +72,7 @@ export default function LoginScreen() {
     } catch (e: any) {
       const msg =
         e?.response?.status === 401
-          ? "Invalid credentials. Please check your Company ID, username, and password."
+          ? "Invalid credentials. Please check your username and password."
           : e?.response?.status === 400
             ? "Bad request. Please verify your login details."
             : e?.message || "An unexpected error occurred.";
@@ -107,19 +108,22 @@ export default function LoginScreen() {
             {/* Form */}
             <View className="gap-4">
               <View>
-                <Text className="text-sm font-medium text-muted mb-1.5">Company ID</Text>
+                <Text className="text-sm font-medium text-muted mb-1.5">Razor ERP URL</Text>
                 <TextInput
                   className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
-                  value={companyId}
-                  onChangeText={setCompanyId}
-                  placeholder="Enter your company ID"
+                  value={companyUrl}
+                  onChangeText={setCompanyUrl}
+                  placeholder="https://yourcompany.razorerp.com"
                   placeholderTextColor={colors.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
-                  keyboardType="number-pad"
+                  keyboardType="url"
                   returnKeyType="next"
                   onSubmitEditing={() => usernameRef.current?.focus()}
                 />
+                <Text className="text-xs text-muted mt-1 ml-1">
+                  Your company's Razor ERP web address
+                </Text>
               </View>
 
               <View>
@@ -129,7 +133,7 @@ export default function LoginScreen() {
                   className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
                   value={username}
                   onChangeText={setUsername}
-                  placeholder="Enter your Razor ERP username"
+                  placeholder="Enter your username"
                   placeholderTextColor={colors.muted}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -154,38 +158,6 @@ export default function LoginScreen() {
                   onSubmitEditing={handleLogin}
                 />
               </View>
-
-              {/* Advanced: API URL toggle */}
-              <TouchableOpacity
-                onPress={() => setShowAdvanced(!showAdvanced)}
-                activeOpacity={0.7}
-              >
-                <View className="flex-row items-center gap-1">
-                  <MaterialIcons
-                    name={showAdvanced ? "expand-less" : "expand-more"}
-                    size={18}
-                    color={colors.muted}
-                  />
-                  <Text className="text-sm text-muted">Advanced Settings</Text>
-                </View>
-              </TouchableOpacity>
-
-              {showAdvanced ? (
-                <View>
-                  <Text className="text-sm font-medium text-muted mb-1.5">API Base URL</Text>
-                  <TextInput
-                    className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
-                    value={baseUrl}
-                    onChangeText={setBaseUrl}
-                    placeholder="https://apiprod.razorerp.com"
-                    placeholderTextColor={colors.muted}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="url"
-                    returnKeyType="done"
-                  />
-                </View>
-              ) : null}
 
               {error ? (
                 <View className="bg-error/10 rounded-lg px-4 py-3">
@@ -215,7 +187,7 @@ export default function LoginScreen() {
             <View className="mt-8 items-center">
               <Text className="text-xs text-muted text-center leading-5">
                 Use the same credentials you use to log in to Razor ERP.{"\n"}
-                Your Company ID can be found in your Razor ERP account settings.
+                Your Razor ERP URL is the web address you visit to access Razor.
               </Text>
             </View>
           </View>
