@@ -18,6 +18,7 @@ import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
 import { createAsset, uploadOrderFile, updateOrderNotes } from "@/lib/razor-api";
 import type { CapturedAsset } from "@/lib/types";
+import { generateAndShareReport, printReport } from "@/lib/generate-report";
 
 export default function OrderSummaryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -139,6 +140,40 @@ export default function OrderSummaryScreen() {
           <Text className="text-lg font-bold text-foreground">Order Summary</Text>
           <Text className="text-xs text-muted">{ro.autoName || `Order #${ro.id}`}</Text>
         </View>
+        <TouchableOpacity
+          onPress={() => {
+            if (Platform.OS === "web") {
+              generateAndShareReport(order).catch(() =>
+                Alert.alert("Error", "Failed to generate report")
+              );
+            } else {
+              Alert.alert(
+                "Order Report",
+                "Generate a PDF report for this order?",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Share PDF",
+                    onPress: () =>
+                      generateAndShareReport(order).catch((e) =>
+                        Alert.alert("Error", e?.message || "Failed to generate report")
+                      ),
+                  },
+                  {
+                    text: "Print",
+                    onPress: () =>
+                      printReport(order).catch((e) =>
+                        Alert.alert("Error", e?.message || "Failed to print report")
+                      ),
+                  },
+                ]
+              );
+            }
+          }}
+          style={{ padding: 4 }}
+        >
+          <MaterialIcons name="picture-as-pdf" size={24} color={colors.error} />
+        </TouchableOpacity>
       </View>
 
       <FlatList

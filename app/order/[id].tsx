@@ -18,6 +18,7 @@ import { geocodeAddress } from "@/lib/razor-api";
 import NativeMap from "@/components/native-map";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import type { CapturedAsset } from "@/lib/types";
+import { generateAndShareReport, printReport } from "@/lib/generate-report";
 
 function AssetRow({
   asset,
@@ -206,6 +207,40 @@ export default function OrderDetailScreen() {
           </Text>
           <Text className="text-xs text-muted">{ro.customerName || "Unknown Customer"}</Text>
         </View>
+        <TouchableOpacity
+          onPress={() => {
+            if (Platform.OS === "web") {
+              generateAndShareReport(order).catch((e) =>
+                Alert.alert("Error", "Failed to generate report")
+              );
+            } else {
+              Alert.alert(
+                "Order Report",
+                "Generate a PDF report for this order?",
+                [
+                  { text: "Cancel", style: "cancel" },
+                  {
+                    text: "Share PDF",
+                    onPress: () =>
+                      generateAndShareReport(order).catch((e) =>
+                        Alert.alert("Error", e?.message || "Failed to generate report")
+                      ),
+                  },
+                  {
+                    text: "Print",
+                    onPress: () =>
+                      printReport(order).catch((e) =>
+                        Alert.alert("Error", e?.message || "Failed to print report")
+                      ),
+                  },
+                ]
+              );
+            }
+          }}
+          style={{ padding: 4, marginRight: 8 }}
+        >
+          <MaterialIcons name="picture-as-pdf" size={24} color={colors.error} />
+        </TouchableOpacity>
         <TouchableOpacity
           onPress={() =>
             router.push({

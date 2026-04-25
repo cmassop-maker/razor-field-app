@@ -39,3 +39,8 @@
 - [x] Implement GPS tracking for drivers (live location, route tracking, stats)
 - [x] Fix order list limited to 25 orders - use offset/limit pagination with batch size 500
 - [x] Add GPS coordinates and timestamp to each asset capture (serialization location tracking)
+- [x] Create PDF report generation utility for orders
+- [x] Include order details, all captured assets with GPS stamps, and signature in PDF
+- [x] Add "Generate Report" button to order detail and summary screens
+- [x] Add share/export functionality for the generated PDF
+- [x] Add order status filter tabs (All, Pending, In Progress, Completed) to Orders screen
