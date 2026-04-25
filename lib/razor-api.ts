@@ -921,12 +921,13 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
 
   // Step 3: Build the payload with all required fields per Razor ERP validation:
   // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
-  // uniqueId is required (cannot be empty) — we send a UUID as the internal identifier.
-  // Razor will also auto-generate an autoName (e.g. AST-00032361) which we use as the display UID.
+  // uniqueId is required (cannot be empty).
+  // We generate a short UID matching Razor ERP convention: "RF" prefix + 8 uppercase hex chars.
+  // Example: "RF4A7B2C1E" (10 chars total, easy to read and communicate).
   // lotAutoName must reference an existing lot on the order (e.g. "21502")
   // Field names verified from Razor ERP Swagger docs (POST /api/v1/Asset):
   //   manufacturer (NOT make/mfg), serial (NOT serialNumber/serial#), model
-  const uniqueId = generateUUID();
+  const uniqueId = generateShortUID();
   const payload: Record<string, unknown> = {
     manufacturer: asset.make,
     model: asset.model,
@@ -955,22 +956,16 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     const res = await client.post<RazorAssetResponse>("/Asset", payload);
     console.log("[RazorAPI] Asset created successfully:", JSON.stringify(res.data));
 
-    // The POST response may not include the Razor-assigned uniqueId.
-    // Razor auto-generates a UID in format: 2-letter prefix + 8 hex chars (e.g. "ATE9CD95A2").
-    // If the response doesn't include uniqueId, fetch the asset to get it.
+    // We sent our short UID (e.g. "RF4A7B2C1E") as uniqueId.
+    // Razor keeps whatever we send, so the UID in the app matches Razor ERP.
+    // Ensure the response includes the uniqueId we sent.
     let result = res.data;
-    if (!result.uniqueId && result.id) {
-      try {
-        const fetched = await fetchAssetById(result.id);
-        if (fetched?.uniqueId) {
-          result = { ...result, uniqueId: fetched.uniqueId };
-          console.log(`[RazorAPI] Fetched Razor UID: ${fetched.uniqueId}`);
-        }
-      } catch (fetchErr: any) {
-        console.warn(`[RazorAPI] Could not fetch asset UID after creation: ${fetchErr?.message}`);
-      }
-    } else if (result.uniqueId) {
-      console.log(`[RazorAPI] Razor UID from POST response: ${result.uniqueId}`);
+    if (!result.uniqueId) {
+      // If POST response doesn't echo back uniqueId, use the one we generated
+      result = { ...result, uniqueId };
+      console.log(`[RazorAPI] Using generated UID: ${uniqueId}`);
+    } else {
+      console.log(`[RazorAPI] Razor UID confirmed: ${result.uniqueId}`);
     }
 
     return result;
@@ -984,14 +979,17 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
 }
 
 /**
- * Generate a UUID v4 string (no crypto dependency needed).
+ * Generate a short, manageable UID matching Razor ERP convention.
+ * Format: "RF" (Razor Field) prefix + 8 uppercase hex characters.
+ * Example: "RF4A7B2C1E" (10 chars total).
+ * Collision probability is ~1 in 4 billion (2^32), which is more than sufficient
+ * for the volume of assets processed per company.
  */
-function generateUUID(): string {
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
+function generateShortUID(): string {
+  const hex = Array.from({ length: 8 }, () =>
+    Math.floor(Math.random() * 16).toString(16)
+  ).join("").toUpperCase();
+  return `RF${hex}`;
 }
 
 /**
