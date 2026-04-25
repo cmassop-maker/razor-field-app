@@ -402,7 +402,10 @@ export default function AssetCaptureScreen() {
         style={{ borderBottomColor: colors.border }}
       >
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={() => {
+            // Navigate explicitly to order page to avoid landing on scanner
+            router.replace({ pathname: "/order/[id]", params: { id: orderId } });
+          }}
           style={{ padding: 4, marginRight: 12 }}
         >
           <MaterialIcons name="arrow-back" size={24} color={colors.foreground} />
@@ -991,7 +994,10 @@ export default function AssetCaptureScreen() {
             <TouchableOpacity
               className="rounded-xl py-3 items-center mt-3 border"
               style={{ borderColor: colors.border }}
-              onPress={() => router.back()}
+              onPress={() => {
+                // Navigate explicitly to order page to avoid landing on scanner
+                router.replace({ pathname: "/order/[id]", params: { id: orderId } });
+              }}
               activeOpacity={0.8}
             >
               <Text

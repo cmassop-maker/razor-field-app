@@ -60,3 +60,4 @@
 - [x] Add duplicate serial number detection with alert prompt
 - [ ] Block duplicate serial numbers entirely (no Keep option, clear serial and show error)
 - [ ] Auto-reopen camera scanner after saving an asset
+- [x] Bug fix: Back button on asset capture goes to scanner instead of order page
