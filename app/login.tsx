@@ -21,13 +21,12 @@ export default function LoginScreen() {
   const colors = useColors();
 
   const [companyUrl, setCompanyUrl] = useState("https://monwire.razorerp.com");
-  const [companyId, setCompanyId] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState("");
+  const [statusText, setStatusText] = useState("");
 
-  const companyIdRef = useRef<TextInput>(null);
   const usernameRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
 
@@ -42,33 +41,30 @@ export default function LoginScreen() {
 
   async function handleLogin() {
     if (!companyUrl.trim() || !username.trim() || !password.trim()) {
-      setError("Please fill in all required fields.");
-      return;
-    }
-    const parsedCompanyId = parseInt(companyId.trim(), 10);
-    if (!companyId.trim() || isNaN(parsedCompanyId) || parsedCompanyId <= 0) {
-      setError("Please enter a valid Company ID (a number greater than 0).");
+      setError("Please fill in all fields.");
       return;
     }
     const baseUrl = normalizeUrl(companyUrl);
     setError("");
+    setStatusText("Connecting to Razor ERP...");
     setIsConnecting(true);
     try {
+      setStatusText("Resolving company...");
       const result = await loginWithCredentials(
         baseUrl,
-        parsedCompanyId,
         username.trim(),
         password.trim()
       );
       if (result.accessToken) {
+        setStatusText("Authenticated! Loading...");
         initRazorClient(baseUrl, result.accessToken);
-        await saveCredentials(baseUrl, result.accessToken, parsedCompanyId, username.trim());
+        await saveCredentials(baseUrl, result.accessToken, result.companyId, username.trim());
         dispatch({
           type: "SET_API_CONFIG",
           payload: {
             baseUrl,
             accessToken: result.accessToken,
-            companyId: parsedCompanyId,
+            companyId: result.companyId,
             username: username.trim(),
             isConnected: true,
           },
@@ -79,15 +75,24 @@ export default function LoginScreen() {
         setError("Login failed. No access token received.");
       }
     } catch (e: any) {
-      const msg =
-        e?.response?.status === 404
-          ? "Invalid username or password. Please try again."
-          : e?.response?.status === 400
-            ? e?.response?.data?.message || "Bad request. Please verify your login details."
-            : e?.message || "An unexpected error occurred.";
+      const status = e?.response?.status;
+      const serverMsg = e?.response?.data?.message || e?.response?.data?.title;
+      let msg: string;
+      if (serverMsg) {
+        msg = serverMsg;
+      } else if (status === 404) {
+        msg = "Invalid username or password. Please try again.";
+      } else if (status === 400) {
+        msg = "Bad request. Please verify your login details.";
+      } else if (e?.message?.includes("Company ID")) {
+        msg = "Could not identify your company from the URL. Please check the Razor ERP URL.";
+      } else {
+        msg = e?.message || "An unexpected error occurred. Please try again.";
+      }
       setError(msg);
     } finally {
       setIsConnecting(false);
+      setStatusText("");
     }
   }
 
@@ -115,7 +120,7 @@ export default function LoginScreen() {
             </View>
 
             {/* Form */}
-            <View className="gap-3.5">
+            <View className="gap-4">
               <View>
                 <Text className="text-sm font-medium text-muted mb-1.5">Razor ERP URL</Text>
                 <TextInput
@@ -128,26 +133,8 @@ export default function LoginScreen() {
                   autoCorrect={false}
                   keyboardType="url"
                   returnKeyType="next"
-                  onSubmitEditing={() => companyIdRef.current?.focus()}
-                />
-              </View>
-
-              <View>
-                <Text className="text-sm font-medium text-muted mb-1.5">Company ID</Text>
-                <TextInput
-                  ref={companyIdRef}
-                  className="bg-surface border border-border rounded-xl px-4 py-3.5 text-foreground text-base"
-                  value={companyId}
-                  onChangeText={setCompanyId}
-                  placeholder="Enter your numeric Company ID"
-                  placeholderTextColor={colors.muted}
-                  keyboardType="number-pad"
-                  returnKeyType="next"
                   onSubmitEditing={() => usernameRef.current?.focus()}
                 />
-                <Text className="text-xs text-muted mt-1 ml-1">
-                  Found in Razor ERP under Settings &gt; Company
-                </Text>
               </View>
 
               <View>
@@ -200,7 +187,10 @@ export default function LoginScreen() {
                 activeOpacity={0.8}
               >
                 {isConnecting ? (
-                  <ActivityIndicator color="#FFFFFF" />
+                  <View className="flex-row items-center gap-2">
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                    <Text className="text-white font-semibold text-base">{statusText || "Signing in..."}</Text>
+                  </View>
                 ) : (
                   <Text className="text-white font-semibold text-base">Sign In</Text>
                 )}
@@ -211,7 +201,7 @@ export default function LoginScreen() {
             <View className="mt-6 items-center">
               <Text className="text-xs text-muted text-center leading-5">
                 Use the same credentials you use to log in to Razor ERP.{"\n"}
-                Contact your admin if you don't know your Company ID.
+                Your company is automatically detected from the URL.
               </Text>
             </View>
           </View>

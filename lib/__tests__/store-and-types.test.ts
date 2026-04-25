@@ -161,6 +161,7 @@ describe("Domain Types", () => {
 describe("Razor API Module", () => {
   it("should export required functions from razor-api", async () => {
     const api = await import("../razor-api");
+    expect(typeof api.resolveCompanyId).toBe("function");
     expect(typeof api.loginWithCredentials).toBe("function");
     expect(typeof api.initRazorClient).toBe("function");
     expect(typeof api.getRazorClient).toBe("function");

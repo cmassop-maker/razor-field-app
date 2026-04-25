@@ -8,18 +8,45 @@ let client: AxiosInstance | null = null;
 let currentBaseUrl: string = "";
 
 /**
+ * Resolve the numeric Company ID from a Razor ERP tenant hostname.
+ * GET /api/v1/company-domain/{hostname}/to-company
+ */
+export async function resolveCompanyId(baseUrl: string): Promise<number> {
+  const cleanUrl = baseUrl.replace(/\/+$/, "");
+  // Extract hostname from the URL (e.g. "monwire.razorerp.com")
+  let hostname: string;
+  try {
+    hostname = new URL(cleanUrl).host;
+  } catch {
+    hostname = cleanUrl.replace(/^https?:\/\//, "").split("/")[0];
+  }
+  const res = await axios.get<{ companyId: number }>(
+    `${cleanUrl}/api/v1/company-domain/${hostname}/to-company`,
+    {
+      headers: { Accept: "application/json" },
+      timeout: 10000,
+    }
+  );
+  if (!res.data?.companyId) {
+    throw new Error("Could not resolve Company ID from the provided URL.");
+  }
+  return res.data.companyId;
+}
+
+/**
  * Authenticate with Razor ERP using username/password.
  * The baseUrl is the tenant-specific URL (e.g. https://monwire.razorerp.com).
+ * Automatically resolves the Company ID from the URL, then
  * POST /api/v1/Auth with { companyId, login, password }
- * Returns the JWT access token on success.
+ * Returns the JWT access token and resolved companyId on success.
  */
 export async function loginWithCredentials(
   baseUrl: string,
-  companyId: number,
   login: string,
   password: string
-): Promise<JwtAuthResponse> {
+): Promise<JwtAuthResponse & { companyId: number }> {
   const cleanUrl = baseUrl.replace(/\/+$/, "");
+  const companyId = await resolveCompanyId(cleanUrl);
   const body: IssueJwtDto = { companyId, login, password };
   const res = await axios.post<JwtAuthResponse>(
     `${cleanUrl}/api/v1/Auth`,
@@ -32,7 +59,7 @@ export async function loginWithCredentials(
   if (!res.data?.accessToken) {
     throw new Error("Login failed: no access token returned.");
   }
-  return res.data;
+  return { ...res.data, companyId };
 }
 
 /**
