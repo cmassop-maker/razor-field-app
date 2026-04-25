@@ -110,7 +110,8 @@ export default function OrderSummaryScreen() {
 
           // Extract the Razor asset ID and UID from the response
           const razorAssetId = result.id;
-          const razorUid = result.autoName || `AST-${String(razorAssetId).padStart(8, "0")}`;
+          // Razor auto-generates a uniqueId (e.g. "ATE9CD95A2") — use that as the display UID
+          const razorUid = result.uniqueId || `ID-${razorAssetId}`;
 
           // Update the local asset with Razor ID and UID
           dispatch({

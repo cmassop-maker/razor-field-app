@@ -875,11 +875,28 @@ export interface CreateAssetPayload {
 
 export interface RazorAssetResponse {
   id: number;
-  autoName?: string; // Razor UID e.g. "AST-00001234"
+  uniqueId?: string; // Razor-assigned UID e.g. "ATE9CD95A2"
+  autoName?: string; // Legacy — not used on assets, only on orders
   make?: string;
   model?: string;
-  serialNumber?: string;
+  serial?: string;
   [key: string]: unknown;
+}
+
+/**
+ * Fetch a single asset by its numeric ID to retrieve the Razor-assigned uniqueId.
+ * GET /api/v1/Asset/{id}
+ */
+export async function fetchAssetById(assetId: number): Promise<RazorAssetResponse | null> {
+  if (!client) return null;
+  try {
+    const res = await client.get<RazorAssetResponse>(`/Asset/${assetId}`);
+    return res.data;
+  } catch (e: any) {
+    // If GET by numeric ID fails, it might need the uniqueId instead
+    console.warn(`[RazorAPI] fetchAssetById(${assetId}) failed: ${e?.message}`);
+    return null;
+  }
 }
 
 export async function createAsset(asset: CreateAssetPayload): Promise<RazorAssetResponse> {
@@ -938,12 +955,25 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     const res = await client.post<RazorAssetResponse>("/Asset", payload);
     console.log("[RazorAPI] Asset created successfully:", JSON.stringify(res.data));
 
-    // Note: Manufacturer is inherited from the ItemMaster record, not set directly on the asset.
-    // The PATCH /api/v1/Asset/{id} endpoint returns 405 for manufacturer changes.
-    // The findOrCreateItemMaster() call above ensures the correct manufacturerId is set
-    // on the ItemMaster, which then flows through to all linked assets.
+    // The POST response may not include the Razor-assigned uniqueId.
+    // Razor auto-generates a UID in format: 2-letter prefix + 8 hex chars (e.g. "ATE9CD95A2").
+    // If the response doesn't include uniqueId, fetch the asset to get it.
+    let result = res.data;
+    if (!result.uniqueId && result.id) {
+      try {
+        const fetched = await fetchAssetById(result.id);
+        if (fetched?.uniqueId) {
+          result = { ...result, uniqueId: fetched.uniqueId };
+          console.log(`[RazorAPI] Fetched Razor UID: ${fetched.uniqueId}`);
+        }
+      } catch (fetchErr: any) {
+        console.warn(`[RazorAPI] Could not fetch asset UID after creation: ${fetchErr?.message}`);
+      }
+    } else if (result.uniqueId) {
+      console.log(`[RazorAPI] Razor UID from POST response: ${result.uniqueId}`);
+    }
 
-    return res.data;
+    return result;
   } catch (e: any) {
     const status = e?.response?.status;
     const body = e?.response?.data;
