@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import {
   Text,
   View,
@@ -6,13 +6,14 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
+  Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useColors } from "@/hooks/use-colors";
 import { useStore } from "@/lib/store";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
-import { v4 as uuidv4 } from "uuid";
+import { generateId } from "@/lib/uuid";
 import type { CapturedSignature } from "@/lib/types";
 
 // Conditionally import SignatureCanvas
@@ -32,38 +33,64 @@ export default function SignatureScreen() {
   const [signerName, setSignerName] = useState("");
   const [signerTitle, setSignerTitle] = useState("");
   const [signatureData, setSignatureData] = useState("");
+  const [hasSigned, setHasSigned] = useState(false);
   const [error, setError] = useState("");
 
   function handleClear() {
     sigRef.current?.clearSignature?.();
     setSignatureData("");
+    setHasSigned(false);
   }
 
-  function handleEnd() {
+  // Called when the user lifts their finger after drawing
+  const handleEnd = useCallback(() => {
+    // Read the signature data from the canvas
+    // This triggers onOK callback with the base64 data
     sigRef.current?.readSignature?.();
-  }
+  }, []);
 
-  function handleOK(signature: string) {
-    // signature is a base64 data URI
-    const base64 = signature.replace(/^data:image\/\w+;base64,/, "");
-    setSignatureData(base64);
-  }
+  // Called with the base64 data after readSignature completes
+  const handleOK = useCallback((signature: string) => {
+    if (signature && signature.length > 0) {
+      // Store the full base64 string (may or may not have data URI prefix)
+      setSignatureData(signature);
+      setHasSigned(true);
+    }
+  }, []);
+
+  // Called when signature data is empty (canvas was cleared)
+  const handleEmpty = useCallback(() => {
+    setSignatureData("");
+    setHasSigned(false);
+  }, []);
 
   function handleConfirm() {
     if (!signerName.trim()) {
       setError("Signer name is required");
       return;
     }
-    if (!signatureData) {
+    if (!signatureData && !hasSigned) {
       setError("Please provide a signature");
       return;
     }
+
+    // If we have hasSigned but signatureData is empty, try reading one more time
+    if (!signatureData) {
+      setError("Signature could not be captured. Please try again.");
+      return;
+    }
+
     setError("");
 
+    // Extract base64 data, removing data URI prefix if present
+    const base64 = signatureData.includes("base64,")
+      ? signatureData.split("base64,")[1]
+      : signatureData;
+
     const sig: CapturedSignature = {
-      localId: uuidv4(),
+      localId: generateId(),
       orderId: Number(orderId),
-      signatureBase64: signatureData,
+      signatureBase64: base64,
       signerName: signerName.trim(),
       signerTitle: signerTitle.trim(),
       capturedAt: new Date().toISOString(),
@@ -135,6 +162,16 @@ export default function SignatureScreen() {
         </View>
       </View>
 
+      {/* Signature Status Indicator */}
+      {hasSigned && (
+        <View style={[styles.statusBar, { backgroundColor: `${colors.success}15` }]}>
+          <MaterialIcons name="check-circle" size={16} color={colors.success} />
+          <Text style={{ color: colors.success, fontSize: 13, fontWeight: "600", marginLeft: 6 }}>
+            Signature captured
+          </Text>
+        </View>
+      )}
+
       {/* Signature Pad */}
       <View style={[styles.signatureArea, { borderColor: colors.border }]}>
         {isWeb ? (
@@ -149,6 +186,7 @@ export default function SignatureScreen() {
               onPress={() => {
                 // Create a simple placeholder for web testing
                 setSignatureData("PLACEHOLDER_WEB_SIGNATURE");
+                setHasSigned(true);
               }}
             >
               <Text style={{ color: colors.primary, fontWeight: "600" }}>
@@ -162,6 +200,7 @@ export default function SignatureScreen() {
               ref={sigRef}
               onOK={handleOK}
               onEnd={handleEnd}
+              onEmpty={handleEmpty}
               descriptionText=""
               clearText="Clear"
               confirmText="Save"
@@ -201,11 +240,11 @@ export default function SignatureScreen() {
             styles.confirmButton,
             {
               backgroundColor: colors.primary,
-              opacity: signatureData && signerName.trim() ? 1 : 0.5,
+              opacity: hasSigned && signerName.trim() ? 1 : 0.5,
             },
           ]}
           onPress={handleConfirm}
-          disabled={!signatureData || !signerName.trim()}
+          disabled={!hasSigned || !signerName.trim()}
           activeOpacity={0.8}
         >
           <MaterialIcons name="check-circle" size={20} color="#FFFFFF" />
@@ -247,6 +286,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
+  },
+  statusBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginHorizontal: 16,
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
   },
   signatureArea: {
     flex: 1,

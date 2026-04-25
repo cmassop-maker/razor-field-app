@@ -80,19 +80,23 @@ export default function ScannerScreen() {
   );
 
   function handleUseValue(value: string) {
-    router.replace({
+    // Navigate back to the asset-capture screen that pushed us,
+    // passing the scanned serial via navigation params.
+    // Using router.navigate preserves the previous screen's state.
+    router.navigate({
       pathname: "/asset-capture",
-      params: { orderId, scannedSerial: value.trim() },
+      params: { orderId, scannedSerial: value.trim(), _scanTs: Date.now().toString() },
     });
   }
 
   function handleUseContinuousValues() {
     // Return the list of scanned serials as a JSON array
-    router.replace({
+    router.navigate({
       pathname: "/asset-capture",
       params: {
         orderId,
         scannedSerials: JSON.stringify(scannedList),
+        _scanTs: Date.now().toString(),
       },
     });
   }
@@ -347,10 +351,7 @@ export default function ScannerScreen() {
             <TouchableOpacity
               style={[styles.manualButton, { borderColor: "#FFFFFF" }]}
               onPress={() => {
-                router.replace({
-                  pathname: "/asset-capture",
-                  params: { orderId },
-                });
+                router.back();
               }}
             >
               <MaterialIcons name="keyboard" size={18} color="#FFFFFF" />

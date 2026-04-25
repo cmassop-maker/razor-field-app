@@ -10,15 +10,16 @@ import {
   ActivityIndicator,
   FlatList,
   StyleSheet,
+  Alert,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams, useNavigation } from "expo-router";
 import { ScreenContainer } from "@/components/screen-container";
 import { useStore } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
 import * as Location from "expo-location";
-import { v4 as uuidv4 } from "uuid";
+import { generateId } from "@/lib/uuid";
 import type { AssetCondition, AssetType, CapturedAsset } from "@/lib/types";
 import {
   recordMakeModel,
@@ -55,18 +56,34 @@ const ASSET_TYPE_ICONS: Record<AssetType, string> = {
 };
 
 export default function AssetCaptureScreen() {
-  const { orderId, scannedSerial, scannedSerials } = useLocalSearchParams<{
+  const params = useLocalSearchParams<{
     orderId: string;
     scannedSerial?: string;
     scannedSerials?: string;
+    _scanTs?: string;
   }>();
+  const orderId = params.orderId;
   const { dispatch } = useStore();
   const colors = useColors();
 
   const [assetType, setAssetType] = useState<AssetType>("Laptop");
   const [make, setMake] = useState("");
   const [model, setModel] = useState("");
-  const [serialNumber, setSerialNumber] = useState(scannedSerial || "");
+  const [serialNumber, setSerialNumber] = useState("");
+
+  // Track whether we've already processed a given scan result using the timestamp
+  const lastProcessedTs = useRef<string>("");
+
+  // When scannedSerial param changes (single scan), update serial field
+  // without wiping other form fields
+  useEffect(() => {
+    const val = params.scannedSerial;
+    const ts = params._scanTs;
+    if (val && ts && ts !== lastProcessedTs.current) {
+      lastProcessedTs.current = ts;
+      setSerialNumber(val);
+    }
+  }, [params.scannedSerial, params._scanTs]);
 
   // Queue of serials from continuous scanning
   const [serialQueue, setSerialQueue] = useState<string[]>([]);
@@ -97,9 +114,12 @@ export default function AssetCaptureScreen() {
 
   // Process batch scanned serials from continuous scanner
   useEffect(() => {
-    if (scannedSerials) {
+    const raw = params.scannedSerials;
+    const ts = params._scanTs;
+    if (raw && ts && ts !== lastProcessedTs.current) {
+      lastProcessedTs.current = ts;
       try {
-        const parsed = JSON.parse(scannedSerials) as string[];
+        const parsed = JSON.parse(raw) as string[];
         if (Array.isArray(parsed) && parsed.length > 0) {
           setSerialQueue(parsed);
           setSerialNumber(parsed[0]);
@@ -110,7 +130,7 @@ export default function AssetCaptureScreen() {
         // Invalid JSON, ignore
       }
     }
-  }, [scannedSerials]);
+  }, [params.scannedSerials]);
 
   const serialInputRef = useRef<TextInput>(null);
 
@@ -184,6 +204,8 @@ export default function AssetCaptureScreen() {
   }, [make, model]);
 
   function handleScan() {
+    // Use push so that the asset-capture screen stays in the stack
+    // and form state is preserved when scanner pops back
     router.push({
       pathname: "/scanner",
       params: {
@@ -209,7 +231,7 @@ export default function AssetCaptureScreen() {
     setError("");
 
     const asset: CapturedAsset = {
-      localId: uuidv4(),
+      localId: generateId(),
       orderId: Number(orderId),
       assetType,
       make: make.trim(),
@@ -237,6 +259,7 @@ export default function AssetCaptureScreen() {
 
     if (continuousScan) {
       // In continuous mode, advance to next serial in queue or clear for manual entry
+      // Keep make, model, assetType, condition for quick re-entry
       setNotes("");
       if (serialQueue.length > 0 && queueIndex + 1 < serialQueue.length) {
         const nextIdx = queueIndex + 1;
