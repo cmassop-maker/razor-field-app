@@ -405,6 +405,7 @@ export interface CreateAssetPayload {
   condition?: string;
   notes?: string;
   inboundOrderId?: number;
+  lotAutoName?: string; // Lot auto-name from the order (e.g. "21502")
 }
 
 export interface RazorAssetResponse {
@@ -424,14 +425,14 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
 
   // Build the payload with all required fields per Razor ERP validation:
   // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
-  // Plus our asset data: make, model, serialNumber
+  // lotAutoName must reference an existing lot on the order (e.g. "21502")
   const payload: Record<string, unknown> = {
     make: asset.make,
     model: asset.model,
     serialNumber: asset.serialNumber,
     quantity: 1,
     uniqueId: uniqueId,
-    lotAutoName: asset.assetTypeName || asset.make || "Asset",
+    lotAutoName: asset.lotAutoName || "Asset",
     assetWorkflowStep: "Inbound",
   };
 
@@ -485,6 +486,49 @@ export async function linkAssetToOrder(orderId: number, assetId: number): Promis
       return false;
     }
   }
+}
+
+// ---- Lots ----
+
+export interface RazorLot {
+  id: number;
+  autoName: string; // e.g. "21502"
+  name?: string;
+  statusName?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetch lots associated with an inbound order.
+ * Tries multiple endpoint patterns since Razor ERP versions vary.
+ */
+export async function fetchOrderLots(orderId: number): Promise<RazorLot[]> {
+  if (!client) return [];
+  
+  // Try different endpoint patterns for fetching lots
+  const endpoints = [
+    `/InboundOrder/${orderId}/lots`,
+    `/InboundOrder/${orderId}/lot`,
+    `/Lot/by-inbound-order/${orderId}`,
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      console.log(`[RazorAPI] Trying to fetch lots from: ${endpoint}`);
+      const res = await client.get(endpoint);
+      const data = res.data;
+      const lots = Array.isArray(data) ? data : data?.items ?? (data ? [data] : []);
+      if (lots.length > 0) {
+        console.log(`[RazorAPI] Found ${lots.length} lots from ${endpoint}:`, JSON.stringify(lots.map((l: any) => ({ id: l.id, autoName: l.autoName }))));
+        return lots;
+      }
+    } catch (e: any) {
+      console.log(`[RazorAPI] Endpoint ${endpoint} failed (${e?.response?.status}):`, e?.message);
+    }
+  }
+
+  console.warn(`[RazorAPI] No lots found for order ${orderId}`);
+  return [];
 }
 
 export async function lookupAssetBySerial(serialNumber: string) {

@@ -16,7 +16,7 @@ import { useStore } from "@/lib/store";
 import { useColors } from "@/hooks/use-colors";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
-import { createAsset, uploadOrderFile, updateOrderNotes, linkAssetToOrder } from "@/lib/razor-api";
+import { createAsset, uploadOrderFile, updateOrderNotes, linkAssetToOrder, fetchOrderLots } from "@/lib/razor-api";
 import type { CapturedAsset } from "@/lib/types";
 import { generateAndShareReport, printReport } from "@/lib/generate-report";
 
@@ -45,6 +45,20 @@ export default function OrderSummaryScreen() {
       let failCount = 0;
       const razorOrderId = order.razorOrder.id;
 
+      // Fetch lots for this order to get the correct lotAutoName
+      let lotAutoName: string | undefined;
+      try {
+        const lots = await fetchOrderLots(razorOrderId);
+        if (lots.length > 0) {
+          lotAutoName = lots[0].autoName;
+          console.log(`[Submit] Using lot autoName: ${lotAutoName} from order ${razorOrderId}`);
+        } else {
+          console.warn(`[Submit] No lots found for order ${razorOrderId}, will use fallback`);
+        }
+      } catch (e: any) {
+        console.warn(`[Submit] Failed to fetch lots: ${e?.message}`);
+      }
+
       // Submit each asset to Razor ERP and capture the returned ID/UID
       for (const asset of order.assets) {
         if (asset.syncStatus === "synced" && asset.razorAssetId) {
@@ -71,6 +85,7 @@ export default function OrderSummaryScreen() {
             condition: asset.condition,
             notes: asset.notes,
             inboundOrderId: razorOrderId,
+            lotAutoName: lotAutoName,
           });
 
           // Extract the Razor asset ID and UID from the response
