@@ -65,3 +65,4 @@
 - [x] Sync captured assets back to the Razor order via API
 - [x] Show sync status and Razor UID on captured assets in UI
 - [x] Add edit button on captured assets to allow corrections (make, model, serial, condition, notes, asset type)
+- [x] Bug fix: Sync to Razor ERP fails with 400 status code when submitting assets (added required fields: quantity, uniqueId, lotAutoName, assetWorkflowStep)

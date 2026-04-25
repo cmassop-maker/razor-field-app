@@ -97,7 +97,10 @@ export default function OrderSummaryScreen() {
           successCount++;
         } catch (e: any) {
           failCount++;
-          console.error("Failed to submit asset:", asset.localId, e?.message);
+          const errMsg = e?.response?.data
+            ? JSON.stringify(e.response.data)
+            : e?.message || "Unknown error";
+          console.error("Failed to submit asset:", asset.localId, errMsg);
           dispatch({
             type: "UPDATE_ASSET",
             payload: {

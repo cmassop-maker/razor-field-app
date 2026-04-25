@@ -1,0 +1,14 @@
+Razor ERP POST /api/v1/Asset - 400 Error Response:
+{
+  "errors": [
+    {"field": "quantity", "message": "'Quantity' is required."},
+    {"field": "uniqueId", "message": "'UniqueId' is required. 'UniqueId' must not be empty."},
+    {"field": "lotAutoName", "message": "'LotAutoName' is required..."}
+  ]
+}
+
+Required fields (all 4 missing):
+- quantity (integer, likely 1 for a single asset)
+- uniqueId (GUID/UUID string - unique identifier for the asset)
+- lotAutoName (string - auto-generated lot name, likely the asset type or category name)
+- assetWorkflowStep (string - workflow step, likely "Inbound" or similar)

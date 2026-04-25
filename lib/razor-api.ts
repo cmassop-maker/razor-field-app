@@ -418,8 +418,51 @@ export interface RazorAssetResponse {
 
 export async function createAsset(asset: CreateAssetPayload): Promise<RazorAssetResponse> {
   if (!client) throw new Error("Razor API client not initialized");
-  const res = await client.post<RazorAssetResponse>("/Asset", asset);
-  return res.data;
+
+  // Generate a unique ID for this asset (UUID v4 format)
+  const uniqueId = generateUUID();
+
+  // Build the payload with all required fields per Razor ERP validation:
+  // Required: quantity, uniqueId, lotAutoName, assetWorkflowStep
+  // Plus our asset data: make, model, serialNumber
+  const payload: Record<string, unknown> = {
+    make: asset.make,
+    model: asset.model,
+    serialNumber: asset.serialNumber,
+    quantity: 1,
+    uniqueId: uniqueId,
+    lotAutoName: asset.assetTypeName || asset.make || "Asset",
+    assetWorkflowStep: "Inbound",
+  };
+
+  // Add optional fields if provided
+  if (asset.assetTypeName) payload.assetTypeName = asset.assetTypeName;
+  if (asset.condition) payload.condition = asset.condition;
+  if (asset.notes) payload.notes = asset.notes;
+
+  try {
+    console.log("[RazorAPI] Creating asset with payload:", JSON.stringify(payload));
+    const res = await client.post<RazorAssetResponse>("/Asset", payload);
+    console.log("[RazorAPI] Asset created successfully:", JSON.stringify(res.data));
+    return res.data;
+  } catch (e: any) {
+    const status = e?.response?.status;
+    const body = e?.response?.data;
+    console.error(`[RazorAPI] Asset creation failed (${status}):`, JSON.stringify(body));
+    const errorDetail = body ? JSON.stringify(body) : e?.message;
+    throw new Error(`Asset creation failed (${status}): ${errorDetail}`);
+  }
+}
+
+/**
+ * Generate a UUID v4 string (no crypto dependency needed).
+ */
+function generateUUID(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
 }
 
 /**
