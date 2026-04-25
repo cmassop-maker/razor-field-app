@@ -433,7 +433,7 @@ export async function createAsset(asset: CreateAssetPayload): Promise<RazorAsset
     quantity: 1,
     uniqueId: uniqueId,
     lotAutoName: asset.lotAutoName || "Asset",
-    assetWorkflowStep: "Inbound",
+    assetWorkflowStep: "Tech Depot",
   };
 
   // Add optional fields if provided
