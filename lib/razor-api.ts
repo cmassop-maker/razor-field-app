@@ -543,17 +543,56 @@ export async function lookupAssetBySerial(serialNumber: string) {
   }
 }
 
-// ---- File Upload (for signatures) ----
+// ---- File Upload (for signatures → Files tab / Add Files) ----
 
+/**
+ * Upload a file (e.g. signature PNG) to the Razor ERP Files tab on an inbound order.
+ * Tries multiple endpoint patterns since Razor ERP versions vary.
+ * The file will appear under the "Files" / "Add Files" tab on the order.
+ */
 export async function uploadOrderFile(orderId: number, base64Data: string, fileName: string) {
   if (!client) throw new Error("Razor API client not initialized");
-  const formData = new FormData();
-  formData.append("file", {
-    uri: `data:image/png;base64,${base64Data}`,
-    name: fileName,
-    type: "image/png",
-  } as any);
-  return client.post(`/InboundOrder/file-upload/${orderId}`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
+
+  // Build FormData with the base64 image
+  const buildFormData = (fieldName: string) => {
+    const formData = new FormData();
+    formData.append(fieldName, {
+      uri: `data:image/png;base64,${base64Data}`,
+      name: fileName,
+      type: "image/png",
+    } as any);
+    return formData;
+  };
+
+  // Try multiple endpoint patterns for file upload to the Files tab
+  const attempts = [
+    { endpoint: `/InboundOrder/${orderId}/file`, field: "file" },
+    { endpoint: `/InboundOrder/${orderId}/files`, field: "file" },
+    { endpoint: `/InboundOrder/file-upload/${orderId}`, field: "file" },
+    { endpoint: `/InboundOrder/${orderId}/file`, field: "files" },
+    { endpoint: `/File/inbound-order/${orderId}`, field: "file" },
+  ];
+
+  for (const { endpoint, field } of attempts) {
+    try {
+      console.log(`[RazorAPI] Trying file upload to: ${endpoint} (field: ${field})`);
+      const formData = buildFormData(field);
+      const res = await client.post(endpoint, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      console.log(`[RazorAPI] File uploaded successfully to ${endpoint}:`, JSON.stringify(res.data));
+      return res;
+    } catch (e: any) {
+      const status = e?.response?.status;
+      const body = e?.response?.data;
+      console.log(`[RazorAPI] File upload to ${endpoint} failed (${status}):`, body ? JSON.stringify(body) : e?.message);
+      // If we get a 400 (bad request) or 422 (validation), try next endpoint
+      // If we get a 404, the endpoint doesn't exist, try next
+      // If we get a 200/201, it would have returned above
+      continue;
+    }
+  }
+
+  // All endpoints failed
+  throw new Error(`Failed to upload file to order ${orderId} — all endpoint patterns exhausted`);
 }
